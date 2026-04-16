@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, Award, Home } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Award, Home, Target, AlertTriangle, BarChart3 } from "lucide-react";
 import { AptitudeTestResult } from "@/lib/aptitudeQuestions";
 
 interface QuizQuestion {
@@ -38,14 +38,13 @@ const AptitudeResult = () => {
       }, 300);
 
       const mainDiv = document.getElementById("result-main");
-
       if (mainDiv && !document.fullscreenElement) {
         mainDiv.requestFullscreen().catch((err) => {
           console.log("Fullscreen request failed:", err.message);
         });
       }
     } else {
-      navigate("/aptitude-test");
+      navigate("/aptitude");
     }
   }, [navigate]);
 
@@ -58,24 +57,31 @@ const AptitudeResult = () => {
   }
 
   const percentage = (result.score / result.totalQuestions) * 100;
+  const wrongCount = result.totalQuestions - result.score;
+  const unansweredCount = result.totalQuestions - result.selectedAnswers.length;
+  const isPractice = result.mode === "practice";
 
   const performanceLevel =
-    percentage >= 80
-      ? "Excellent"
-      : percentage >= 60
-      ? "Good"
-      : percentage >= 40
-      ? "Average"
-      : "Needs Improvement";
+    percentage >= 80 ? "Excellent"
+    : percentage >= 60 ? "Good"
+    : percentage >= 40 ? "Average"
+    : "Needs Improvement";
 
   const performanceColor =
-    percentage >= 80
-      ? "text-success"
-      : percentage >= 60
-      ? "text-primary"
-      : percentage >= 40
-      ? "text-warning"
-      : "text-destructive";
+    percentage >= 80 ? "text-success"
+    : percentage >= 60 ? "text-primary"
+    : percentage >= 40 ? "text-warning"
+    : "text-destructive";
+
+  // Compute topic-wise breakdown
+  const topicBreakdown: Record<string, { correct: number; total: number }> = {};
+  result.questions?.forEach((q) => {
+    const cat = q.category || "unknown";
+    if (!topicBreakdown[cat]) topicBreakdown[cat] = { correct: 0, total: 0 };
+    topicBreakdown[cat].total++;
+    const ans = result.selectedAnswers.find((a) => String(a.questionId) === String(q._id));
+    if (ans?.isCorrect) topicBreakdown[cat].correct++;
+  });
 
   return (
     <div id="result-main" className="min-h-screen bg-background">
@@ -83,17 +89,21 @@ const AptitudeResult = () => {
       <div className="border-b border-border bg-card">
         <div className="max-w-5xl mx-auto px-6 py-6">
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-gradient-primary flex items-center justify-center">
+            <div className={`w-12 h-12 rounded-full flex items-center justify-center ${isPractice ? "bg-emerald-500" : "bg-gradient-primary"}`}>
               <Award className="w-6 h-6 text-white" />
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">
-                Your Aptitude Test Result
+                {isPractice ? "Practice Session Result" : "Your Aptitude Test Result"}
               </h1>
               <p className="text-sm text-muted-foreground">
-                Performance Summary
+                {isPractice ? "Practice" : "Test"} Performance Summary
+                {result.topic && ` — ${result.topic}`}
               </p>
             </div>
+            {isPractice && (
+              <Badge className="ml-auto bg-emerald-100 text-emerald-700 border-emerald-200">Practice</Badge>
+            )}
           </div>
         </div>
       </div>
@@ -104,103 +114,140 @@ const AptitudeResult = () => {
           <div className="flex flex-col items-center">
             <div className="relative w-48 h-48 mb-6">
               <svg className="transform -rotate-90 w-48 h-48">
+                <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="none" className="text-muted" />
                 <circle
-                  cx="96"
-                  cy="96"
-                  r="88"
-                  stroke="currentColor"
-                  strokeWidth="12"
-                  fill="none"
-                  className="text-muted"
-                />
-
-                <circle
-                  cx="96"
-                  cy="96"
-                  r="88"
-                  stroke="currentColor"
-                  strokeWidth="12"
-                  fill="none"
+                  cx="96" cy="96" r="88"
+                  stroke="currentColor" strokeWidth="12" fill="none"
                   strokeDasharray={2 * Math.PI * 88}
                   strokeDashoffset={2 * Math.PI * 88 * (1 - progress / 100)}
                   className="text-primary transition-all duration-1000 ease-out"
                   strokeLinecap="round"
                 />
               </svg>
-
               <div className="absolute inset-0 flex flex-col items-center justify-center">
-                <span className="text-5xl font-bold text-foreground">
-                  {result.score}
-                </span>
-                <span className="text-xl text-muted-foreground">
-                  / {result.totalQuestions}
-                </span>
+                <span className="text-5xl font-bold text-foreground">{result.score}</span>
+                <span className="text-xl text-muted-foreground">/ {result.totalQuestions}</span>
               </div>
             </div>
 
             <h2 className="text-3xl font-bold text-foreground mb-2">
               {result.score} out of {result.totalQuestions}
             </h2>
-
-            <Badge
-              className={`${performanceColor} text-lg px-4 py-1 mb-4`}
-              variant="outline"
-            >
+            <Badge className={`${performanceColor} text-lg px-4 py-1 mb-4`} variant="outline">
               {performanceLevel}
             </Badge>
-
-            <p className="text-muted-foreground">
-              You scored {percentage.toFixed(0)}%
-            </p>
+            <p className="text-muted-foreground">You scored {percentage.toFixed(0)}%</p>
           </div>
         </Card>
 
-        {/* Stats */}
-        <div className="grid md:grid-cols-3 gap-4 mb-6">
-          <Card className="p-6 border-2 border-border">
+        {/* Enhanced Stats Grid */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+          <Card className="p-5 border-2 border-border">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-success/20 flex items-center justify-center">
-                <CheckCircle2 className="w-6 h-6 text-success" />
+              <div className="w-10 h-10 rounded-full bg-success/20 flex items-center justify-center">
+                <CheckCircle2 className="w-5 h-5 text-success" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">
-                  Correct Answers
-                </p>
-                <p className="text-2xl font-bold text-foreground">
-                  {result.score}
-                </p>
+                <p className="text-xs text-muted-foreground">Correct</p>
+                <p className="text-2xl font-bold text-foreground">{result.score}</p>
               </div>
             </div>
           </Card>
 
-          <Card className="p-6 border-2 border-border">
+          <Card className="p-5 border-2 border-border">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-destructive/20 flex items-center justify-center">
-                <XCircle className="w-6 h-6 text-destructive" />
+              <div className="w-10 h-10 rounded-full bg-destructive/20 flex items-center justify-center">
+                <XCircle className="w-5 h-5 text-destructive" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Wrong Answers</p>
-                <p className="text-2xl font-bold text-foreground">
-                  {result.totalQuestions - result.score}
-                </p>
+                <p className="text-xs text-muted-foreground">Wrong</p>
+                <p className="text-2xl font-bold text-foreground">{wrongCount - unansweredCount}</p>
               </div>
             </div>
           </Card>
 
-          <Card className="p-6 border-2 border-border">
+          <Card className="p-5 border-2 border-border">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 rounded-full bg-primary/20 flex items-center justify-center">
-                <Clock className="w-6 h-6 text-primary" />
+              <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Time Taken</p>
+                <p className="text-xs text-muted-foreground">Time Taken</p>
+                <p className="text-2xl font-bold text-foreground">{result.timeTaken}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-5 border-2 border-border">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                <Target className="w-5 h-5 text-amber-500" />
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Accuracy</p>
                 <p className="text-2xl font-bold text-foreground">
-                  {result.timeTaken}
+                  {result.selectedAnswers.length > 0
+                    ? `${Math.round((result.score / result.selectedAnswers.length) * 100)}%`
+                    : "0%"}
                 </p>
               </div>
             </div>
           </Card>
         </div>
+
+        {/* Warning count for test mode */}
+        {!isPractice && result.warningCount !== undefined && result.warningCount > 0 && (
+          <Card className="p-5 border-2 border-amber-300 bg-amber-50 dark:bg-amber-950/20 mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
+                <AlertTriangle className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-amber-700 dark:text-amber-400">
+                  Proctoring Warnings: {result.warningCount}
+                </p>
+                <p className="text-xs text-amber-600/80">
+                  Warnings were detected during your test (tab switches, face detection issues, etc.)
+                </p>
+              </div>
+            </div>
+          </Card>
+        )}
+
+        {/* Topic-wise Breakdown */}
+        {Object.keys(topicBreakdown).length > 0 && (
+          <Card className="p-6 border-2 border-border mb-6">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="w-5 h-5 text-primary" />
+              <h3 className="text-xl font-semibold text-foreground">Topic-wise Breakdown</h3>
+            </div>
+            <div className="space-y-4">
+              {Object.entries(topicBreakdown).map(([topic, data]) => {
+                const pct = data.total > 0 ? Math.round((data.correct / data.total) * 100) : 0;
+                return (
+                  <div key={topic}>
+                    <div className="flex justify-between text-sm mb-1">
+                      <span className="font-medium text-foreground capitalize">
+                        {topic.replace(/-/g, " ")}
+                      </span>
+                      <span className="text-muted-foreground">
+                        {data.correct}/{data.total} ({pct}%)
+                      </span>
+                    </div>
+                    <div className="w-full bg-muted-foreground/20 rounded-full h-2.5">
+                      <div
+                        className={`h-2.5 rounded-full transition-all duration-500 ${
+                          pct >= 70 ? "bg-emerald-500" : pct >= 40 ? "bg-amber-500" : "bg-red-500"
+                        }`}
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        )}
 
         {/* Answer Summary */}
         <Card className="p-6 border-2 border-border mb-6">
@@ -216,18 +263,11 @@ const AptitudeResult = () => {
 
               const wasAnswered = !!userAnswer;
               const isCorrect = userAnswer?.isCorrect || false;
-
-              const correctAnswerLetter =
-                userAnswer?.correctAnswer || question.Answer;
+              const correctAnswerLetter = userAnswer?.correctAnswer || question.Answer;
 
               const getOptionLabel = (letter: string) => {
                 if (!letter) return "N/A";
-                const optionKey = `Option ${letter}` as
-                  | "Option A"
-                  | "Option B"
-                  | "Option C"
-                  | "Option D";
-
+                const optionKey = `Option ${letter}` as "Option A" | "Option B" | "Option C" | "Option D";
                 return question[optionKey] ?? letter;
               };
 
@@ -262,29 +302,16 @@ const AptitudeResult = () => {
                         {wasAnswered ? (
                           <>
                             <p className="text-muted-foreground">
-                              <span className="font-semibold">
-                                Your answer:
-                              </span>{" "}
-                              <span
-                                className={
-                                  isCorrect
-                                    ? "text-success"
-                                    : "text-destructive"
-                                }
-                              >
-                                {userAnswer.selected}.{" "}
-                                {getOptionLabel(userAnswer.selected)}
+                              <span className="font-semibold">Your answer:</span>{" "}
+                              <span className={isCorrect ? "text-success" : "text-destructive"}>
+                                {userAnswer.selected}. {getOptionLabel(userAnswer.selected)}
                               </span>
                             </p>
-
                             {!isCorrect && (
                               <p className="text-muted-foreground">
-                                <span className="font-semibold">
-                                  Correct answer:
-                                </span>{" "}
+                                <span className="font-semibold">Correct answer:</span>{" "}
                                 <span className="text-success">
-                                  {correctAnswerLetter}.{" "}
-                                  {getOptionLabel(correctAnswerLetter)}
+                                  {correctAnswerLetter}. {getOptionLabel(correctAnswerLetter)}
                                 </span>
                               </p>
                             )}
@@ -292,18 +319,12 @@ const AptitudeResult = () => {
                         ) : (
                           <>
                             <p className="text-muted-foreground italic">
-                              <span className="font-semibold text-warning">
-                                Not answered
-                              </span>
+                              <span className="font-semibold text-warning">Not answered</span>
                             </p>
-
                             <p className="text-muted-foreground">
-                              <span className="font-semibold">
-                                Correct answer:
-                              </span>{" "}
+                              <span className="font-semibold">Correct answer:</span>{" "}
                               <span className="text-success">
-                                {correctAnswerLetter}.{" "}
-                                {getOptionLabel(correctAnswerLetter)}
+                                {correctAnswerLetter}. {getOptionLabel(correctAnswerLetter)}
                               </span>
                             </p>
                           </>
@@ -317,13 +338,9 @@ const AptitudeResult = () => {
           </div>
         </Card>
 
-        {/* Buttons */}
+        {/* Action Buttons */}
         <div className="flex gap-4 justify-center">
-          <Button
-            onClick={() => navigate("/dashboard")}
-            variant="outline"
-            className="px-8"
-          >
+          <Button onClick={() => navigate("/dashboard")} variant="outline" className="px-8">
             <Home className="w-4 h-4 mr-2" />
             Back to Dashboard
           </Button>
@@ -331,11 +348,20 @@ const AptitudeResult = () => {
           <Button
             onClick={() => {
               sessionStorage.removeItem("aptitudeTestResult");
-              navigate("/aptitude-test");
+              navigate(isPractice ? "/aptitude/practice" : "/aptitude/test");
             }}
-            className="bg-gradient-primary hover:opacity-90 text-white px-8"
+            className={`text-white px-8 ${isPractice ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gradient-primary hover:opacity-90"}`}
           >
-            Retake Test
+            {isPractice ? "Practice Again" : "Retake Test"}
+          </Button>
+
+          <Button
+            onClick={() => navigate("/aptitude/dashboard")}
+            variant="outline"
+            className="px-8"
+          >
+            <BarChart3 className="w-4 h-4 mr-2" />
+            View Dashboard
           </Button>
         </div>
       </div>
@@ -343,4 +369,4 @@ const AptitudeResult = () => {
   );
 };
 
-export default AptitudeResult;  
+export default AptitudeResult;

@@ -1,14 +1,9 @@
-# Environment files
+﻿
+# secrets
 .env
-.env.*
-
-# OS files
+**\.env
+node_modules
+dist
+build
+.vscode
 .DS_Store
-Thumbs.db
-
-# Logs
-*.log
-
-# IDE
-.vscode/
-.idea/

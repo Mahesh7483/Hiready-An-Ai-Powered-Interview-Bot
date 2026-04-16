@@ -44,10 +44,11 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
     { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/resume-analysis", label: "Resume Analysis", icon: FileText },
     { path: "/interview", label: "Mock Interview", icon: MessageSquare },
-    { path: "/aptitude-play-cards", label: "Aptitude Test", icon: Brain },
+    { path: "/aptitude", label: "Aptitude", icon: Brain },
   ];
 
-  const isActive = (path: string) => location.pathname === path;
+  const isActive = (path: string) =>
+    location.pathname === path || location.pathname.startsWith(path + "/");
 
   return (
     <div className="min-h-screen bg-background">

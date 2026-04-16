@@ -72,8 +72,12 @@ export interface AptitudeQuestion {
 export interface AptitudeTestResult {
   score: number;
   totalQuestions: number;
-  selectedAnswers: { questionId: number; selectedOption: string; correctAnswer: string }[];
+  selectedAnswers: { questionId: string; selected: string; correctAnswer: string; isCorrect: boolean }[];
   startTime: Date;
   endTime: Date;
   timeTaken: string;
+  mode: "practice" | "test";
+  warningCount?: number;
+  topic?: string;
+  difficulty?: string;
 }

@@ -15,6 +15,9 @@ import ResumeReport from "./pages/ResumeReport";
 import AptitudePlayCards from "./pages/AptitudePlayCards";
 import AptitudeTest from "./pages/AptitudeTest";
 import AptitudeResult from "./pages/AptitudeResult";
+import AptitudePractice from "./pages/AptitudePractice";
+import AptitudeTestPage from "./pages/AptitudeTestPage";
+import AptitudeDashboard from "./pages/AptitudeDashboard";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -35,6 +38,13 @@ const App = () => (
           <Route path="/interview" element={<Interview />} />
           <Route path="/voice-interview" element={<VoiceInterview />} />
           <Route path="/interview-report" element={<InterviewReport />} />
+          {/* Aptitude routes */}
+          <Route path="/aptitude" element={<AptitudePlayCards />} />
+          <Route path="/aptitude/practice" element={<AptitudePractice />} />
+          <Route path="/aptitude/test" element={<AptitudeTestPage />} />
+          <Route path="/aptitude/dashboard" element={<AptitudeDashboard />} />
+          <Route path="/aptitude/result" element={<AptitudeResult />} />
+          {/* Legacy routes — redirect to new paths */}
           <Route path="/aptitude-play-cards" element={<AptitudePlayCards />} />
           <Route path="/aptitude-test" element={<AptitudeTest />} />
           <Route path="/aptitude-result" element={<AptitudeResult />} />

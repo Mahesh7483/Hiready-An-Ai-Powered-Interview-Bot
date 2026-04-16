@@ -135,7 +135,7 @@ const Dashboard = () => {
               </CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
-              <Link to="/aptitude-play-cards" className="block">
+              <Link to="/aptitude" className="block">
                 <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
                   Take Test <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
