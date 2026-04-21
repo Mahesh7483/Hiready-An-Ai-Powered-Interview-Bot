@@ -7,3 +7,10 @@ dist
 build
 .vscode
 .DS_Store
+.env
+.env.local
+.env.*
+node_modules/
+dist/
+build/
+.git_disabled/
