@@ -8,11 +8,26 @@ const userSchema = new mongoose.Schema({
   email: {
     type: String,
     required: true,
-    unique: true
+    unique: true,
+    lowercase: true
   },
   password: {
     type: String,
-    required: true
+    default: null // null for Google/Firebase-only accounts
+  },
+  firebaseUid: {
+    type: String,
+    index: {
+      unique: true,
+      // Only enforce uniqueness for actual string uids — ignore null/absent
+      partialFilterExpression: { firebaseUid: { $type: "string" } }
+    }
+  },
+  role: {
+    type: String,
+    enum: ["user", "admin"],
+    default: "user",
+    index: true
   }
 });
 

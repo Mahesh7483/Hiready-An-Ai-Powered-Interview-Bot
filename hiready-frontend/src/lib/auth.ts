@@ -6,6 +6,7 @@ import {
   onAuthStateChanged,
 } from "firebase/auth";
 import { auth } from "./firebase";
+import { API_BASE_URL, getAuthHeaders } from "./api";
 
 // Initialize Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
@@ -22,8 +23,39 @@ export interface UserData {
 }
 
 /**
- * Sign in with Google using Firebase Authentication
- * Opens a popup window for user to authenticate
+ * Exchanges the Firebase ID token for a backend JWT so Google users get the
+ * same authenticated access (resume analysis, AI, proctor logs) as email users.
+ */
+async function exchangeFirebaseToken(idToken: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}/auth/google`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ idToken }),
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach the API server (${API_BASE_URL}). Check that the backend is running and try again.`
+    );
+  }
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.message || err.error || "Google sign-in failed");
+  }
+
+  const data = await res.json();
+  if (!data.token) throw new Error("Sign-in did not return a session token");
+  return data.token;
+}
+
+/**
+ * Sign in with Google using Firebase Authentication.
+ * Opens a popup window for the user to authenticate, then mints a backend JWT.
  */
 export const signInWithGoogle = async (): Promise<UserData> => {
   try {
@@ -37,32 +69,39 @@ export const signInWithGoogle = async (): Promise<UserData> => {
       photoURL: user.photoURL,
     };
 
-    // Save user data to localStorage
+    // Mint a backend session from the Firebase identity
+    const idToken = await user.getIdToken();
+    const token = await exchangeFirebaseToken(idToken);
+
+    localStorage.setItem("token", token);
     localStorage.setItem("user", JSON.stringify(userData));
 
     return userData;
-  } catch (error: any) {
+  } catch (error: unknown) {
+    const err = error as { code?: string; message?: string };
     // Handle specific error codes
-    if (error.code === "auth/popup-closed-by-user") {
+    if (err.code === "auth/popup-closed-by-user") {
       throw new Error("Sign-in popup was closed");
-    } else if (error.code === "auth/popup-blocked") {
+    } else if (err.code === "auth/popup-blocked") {
       throw new Error("Sign-in popup was blocked by browser");
-    } else if (error.code === "auth/cancelled-popup-request") {
+    } else if (err.code === "auth/cancelled-popup-request") {
       throw new Error("Sign-in was cancelled");
     }
-    throw new Error(error.message || "Google sign-in failed");
+    throw new Error(err.message || "Google sign-in failed");
   }
 };
 
 /**
- * Sign out from Firebase
+ * Sign out from Firebase and clear the backend session
  */
 export const signOut = async (): Promise<void> => {
   try {
     await firebaseSignOut(auth);
     localStorage.removeItem("user");
-  } catch (error: any) {
-    throw new Error(error.message || "Sign out failed");
+    localStorage.removeItem("token");
+  } catch (error: unknown) {
+    const err = error as { message?: string };
+    throw new Error(err.message || "Sign out failed");
   }
 };
 

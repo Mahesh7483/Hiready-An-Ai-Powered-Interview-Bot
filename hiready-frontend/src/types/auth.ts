@@ -82,7 +82,7 @@ export interface FirebaseConfig {
  */
 
 // Re-export from auth.ts for convenience
-export { UserData as AuthUser } from "@/lib/auth";
+export type { UserData as AuthUser } from "@/lib/auth";
 
 /**
  * Common Firebase Error Codes

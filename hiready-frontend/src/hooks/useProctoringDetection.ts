@@ -3,8 +3,11 @@ import * as blazeface from "@tensorflow-models/blazeface";
 import * as cocoSsd from "@tensorflow-models/coco-ssd";
 import "@tensorflow/tfjs";
 import { sendProctorLog, type ProctorEvent } from "@/lib/proctorLogger";
+import { registerWebcamStream, captureWebcamSnapshot } from "@/lib/webcamSnap";
 
 const DETECTION_INTERVAL_MS = 1500;
+/** Same violation type is persisted at most once per window (prevents DB spam every 1.5s) */
+const LOG_DEDUPE_MS = 10000;
 
 export type WarningType =
   | "no_face_detected"
@@ -42,15 +45,21 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
   const cocoModelRef = useRef<cocoSsd.ObjectDetection | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const lastLoggedRef = useRef<Record<string, number>>({});
 
   // --------------- helpers ---------------
 
   const logEvent = useCallback(
     (event: WarningType) => {
+      const now = Date.now();
+      if (now - (lastLoggedRef.current[event] ?? 0) < LOG_DEDUPE_MS) return;
+      lastLoggedRef.current[event] = now;
       const entry: ProctorEvent = {
         event,
         timestamp: new Date().toISOString(),
         sessionId,
+        // Evidence snapshot at the moment of the violation (admin evidence gallery)
+        snapshot: captureWebcamSnapshot() ?? undefined,
       };
       setLogs((prev) => [...prev, entry]);
       sendProctorLog(entry);
@@ -77,6 +86,7 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
         }
+        registerWebcamStream(stream);
         setCameraDenied(false);
       } catch {
         if (cancelled) return;
@@ -91,6 +101,7 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
 
     return () => {
       cancelled = true;
+      registerWebcamStream(null);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }

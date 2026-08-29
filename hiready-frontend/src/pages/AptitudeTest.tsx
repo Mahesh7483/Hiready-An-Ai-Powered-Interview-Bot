@@ -1,15 +1,17 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle2, XCircle, AlertCircle, Bookmark, Plus, Eye, SkipForward } from "lucide-react";
+import { Clock, CheckCircle2, XCircle, AlertCircle, Bookmark, BookmarkCheck, Plus, Eye, SkipForward } from "lucide-react";
 import { toast } from "sonner";
 import { AptitudeTestResult } from "@/lib/aptitudeQuestions";
 import CandidateWebcamMonitor from "@/components/proctoring/CandidateWebcamMonitor";
 import type { ProctorEvent } from "@/lib/proctorLogger";
 import { useAuth } from "@/hooks/useAuth";
+import { API_BASE_URL, getAuthHeaders } from "@/lib/api";
 
 interface QuizQuestion {
   _id: string;
@@ -19,7 +21,9 @@ interface QuizQuestion {
   "Option C": string | number;
   "Option D": string | number;
   category: string;
+  Explanation?: string;
   Answer: string;
+  difficulty?: string | null;
 }
 
 interface AptitudeTestProps {
@@ -29,6 +33,8 @@ interface AptitudeTestProps {
   questionCount?: number;
   timerEnabled?: boolean;
   timerMinutes?: number;
+  negativeMarking?: boolean;
+  adaptive?: boolean;
 }
 
 const AptitudeTest = ({
@@ -38,6 +44,8 @@ const AptitudeTest = ({
   questionCount = 10,
   timerEnabled,
   timerMinutes = 20,
+  negativeMarking = false,
+  adaptive = false,
 }: AptitudeTestProps) => {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -55,7 +63,6 @@ const AptitudeTest = ({
   const [timeRemaining, setTimeRemaining] = useState(timerMinutes * 60);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
-  const [loading, setLoading] = useState(true);
   const [visitedQuestions, setVisitedQuestions] = useState<Set<string>>(new Set());
   const [markedForReview, setMarkedForReview] = useState<Set<string>>(new Set());
   const proctorLogsRef = useRef<ProctorEvent[]>([]);
@@ -66,15 +73,33 @@ const AptitudeTest = ({
   const [showExplanation, setShowExplanation] = useState(false);
   const [answeredCorrectly, setAnsweredCorrectly] = useState<boolean | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
+  // Adaptive difficulty: running accuracy of this practice session
+  const practiceStatsRef = useRef({ correct: 0, total: 0 });
 
   // Track proctor warning count (test mode only)
   useEffect(() => {
     if (!isPractice) {
       warningCountRef.current = proctorLogsRef.current.filter(
-        (l) => l.type === "warning" || l.type === "violation"
+        (l) => l.event.includes("tab_switch") || l.event.includes("fullscreen_exit")
       ).length;
     }
   });
+
+  // Per-question dwell time accumulation
+  const questionViewStartRef = useRef<number>(Date.now());
+  useEffect(() => {
+    questionViewStartRef.current = Date.now();
+    return () => {
+      const q = questions[currentQuestionIndex];
+      if (!q) return;
+      const spent = Date.now() - questionViewStartRef.current;
+      try {
+        const map = JSON.parse(sessionStorage.getItem("aptitudeTimeSpent") || "{}");
+        map[q._id] = (map[q._id] || 0) + spent;
+        sessionStorage.setItem("aptitudeTimeSpent", JSON.stringify(map));
+      } catch { /* ignore */ }
+    };
+  }, [currentQuestionIndex, questions]);
 
   // Timer countdown
   useEffect(() => {
@@ -91,33 +116,90 @@ const AptitudeTest = ({
     }, 1000);
 
     return () => clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleEndTest is declared below this effect (TDZ); interval re-arms each second via timeRemaining so the closure stays fresh
   }, [testStarted, showTimer, timeRemaining]);
 
-  // Fetch questions from API
-  useEffect(() => {
-    const fetchQuestions = async () => {
-      try {
-        const url = `http://localhost:5000/api/questions/quiz/${topic}?count=${questionCount}${difficulty ? `&difficulty=${difficulty}` : ""}`;
-        const response = await fetch(url);
+  // Fetch questions from API via TanStack Query (cached per topic/count/difficulty)
+  const {
+    data: fetchedQuestions,
+    isLoading: loading,
+    isError: loadError,
+  } = useQuery({
+    queryKey: ["aptitude-quiz", topic, questionCount, difficulty ?? null, adaptive ? "adaptive" : "static"],
+    enabled: showGuidelines,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async (): Promise<QuizQuestion[]> => {
+      if (adaptive) {
+        // Adaptive mode: server picks a difficulty ladder from recent history
+        const response = await fetch(
+          `${API_BASE_URL}/questions/quiz/${topic}/adaptive?count=${questionCount}`,
+          { headers: getAuthHeaders() }
+        );
+        if (!response.ok) throw new Error("Failed to load questions");
         const data = await response.json();
-        setQuestions(data);
-        setLoading(false);
-      } catch (error) {
-        toast.error("Failed to load questions");
-        console.error(error);
-        setLoading(false);
+        return (data.questions ?? []) as QuizQuestion[];
       }
-    };
+      const url = `${API_BASE_URL}/questions/quiz/${topic}?count=${questionCount}${difficulty ? `&difficulty=${difficulty}` : ""}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Failed to load questions");
+      return response.json();
+    },
+  });
 
-    if (showGuidelines) {
-      fetchQuestions();
-    }
-  }, [showGuidelines, topic, questionCount, difficulty]);
+  // Sync query results into local state so practice mode can append more
+  useEffect(() => {
+    if (fetchedQuestions) setQuestions(fetchedQuestions);
+  }, [fetchedQuestions]);
+
+  useEffect(() => {
+    if (loadError) toast.error("Failed to load questions");
+  }, [loadError]);
 
   const formatTime = (seconds: number): string => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  // Persisted bookmarks — saved to the backend notebook across sessions
+  const [bookmarked, setBookmarked] = useState<Set<string>>(new Set());
+  const toggleBookmark = async () => {
+    const qId = questions[currentQuestionIndex]?._id;
+    if (!qId) return;
+    if (!localStorage.getItem("token")) {
+      toast.error("Log in to save questions to your notebook");
+      return;
+    }
+    const wasSaved = bookmarked.has(qId);
+    setBookmarked((prev) => {
+      const next = new Set(prev);
+      if (wasSaved) next.delete(qId);
+      else next.add(qId);
+      return next;
+    });
+    try {
+      const res = wasSaved
+        ? await fetch(`${API_BASE_URL}/questions/bookmarks/${qId}`, {
+            method: "DELETE",
+            headers: getAuthHeaders(),
+          })
+        : await fetch(`${API_BASE_URL}/questions/bookmarks`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+            body: JSON.stringify({ questionId: qId }),
+          });
+      if (!res.ok) throw new Error("Request failed");
+      toast.success(wasSaved ? "Removed from notebook" : "Saved to notebook");
+    } catch {
+      // Roll back the optimistic update
+      setBookmarked((prev) => {
+        const next = new Set(prev);
+        if (wasSaved) next.add(qId);
+        else next.delete(qId);
+        return next;
+      });
+      toast.error("Could not update bookmark");
+    }
   };
 
   const handleStartTest = () => {
@@ -136,6 +218,39 @@ const AptitudeTest = ({
     setSelectedOption(letter);
   };
 
+  // Practice mode: grade a single answer via the backend
+  const checkAnswerMutation = useMutation({
+    mutationFn: async ({ questionId, selected }: { questionId: string; selected: string }) => {
+      const response = await fetch(`${API_BASE_URL}/questions/quiz/submit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answers: [{ questionId, selected }] }),
+      });
+      if (!response.ok) throw new Error("Failed to check answer");
+      return response.json();
+    },
+    onSuccess: (data, variables) => {
+      const res = data.results?.[0];
+      if (res) {
+        setAnsweredCorrectly(res.isCorrect);
+        practiceStatsRef.current.total += 1;
+        if (res.isCorrect) practiceStatsRef.current.correct += 1;
+        setSelectedAnswers((prev) => [
+          ...prev.filter((a) => a.questionId !== variables.questionId),
+          { questionId: variables.questionId, selected: variables.selected },
+        ]);
+        // Temporarily store correct answer on the question object for explanation display
+        setQuestions((prev) =>
+          prev.map((q) =>
+            q._id === variables.questionId ? { ...q, Answer: res.correctAnswer } : q
+          )
+        );
+      }
+      setShowExplanation(true);
+    },
+    onError: () => toast.error("Failed to check answer"),
+  });
+
   // Practice mode: check answer & show explanation
   const handleCheckAnswer = () => {
     if (!selectedOption) {
@@ -143,45 +258,43 @@ const AptitudeTest = ({
       return;
     }
     const currentQuestion = questions[currentQuestionIndex];
-    // Submit to backend to get the correct answer
-    fetch("http://localhost:5000/api/questions/quiz/submit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answers: [{ questionId: currentQuestion._id, selected: selectedOption }] }),
-    })
-      .then((r) => r.json())
-      .then((data) => {
-        const res = data.results?.[0];
-        if (res) {
-          setAnsweredCorrectly(res.isCorrect);
-          // Store answer with correct answer info
-          setSelectedAnswers((prev) => [
-            ...prev.filter((a) => a.questionId !== currentQuestion._id),
-            { questionId: currentQuestion._id, selected: selectedOption },
-          ]);
-          // Temporarily store correct answer on the question object for explanation display
-          setQuestions((prev) =>
-            prev.map((q) =>
-              q._id === currentQuestion._id ? { ...q, Answer: res.correctAnswer } : q
-            )
-          );
-        }
-        setShowExplanation(true);
-      })
-      .catch(() => toast.error("Failed to check answer"));
+    checkAnswerMutation.mutate({ questionId: currentQuestion._id, selected: selectedOption });
   };
 
-  // Practice mode: load 5 more questions
+  // Practice mode: load 5 more questions — difficulty adapts to session accuracy
+  const loadMoreMutation = useMutation({
+    mutationFn: async (): Promise<{ data: QuizQuestion[]; adaptedDifficulty?: string }> => {
+      const stats = practiceStatsRef.current;
+      let adaptedDifficulty: string | undefined;
+      if (stats.total >= 4) {
+        const acc = stats.correct / stats.total;
+        const ladder = ["easy", "medium", "hard"];
+        const currentIdx = ladder.indexOf(difficulty || "medium");
+        if (acc >= 0.8 && currentIdx < ladder.length - 1) {
+          adaptedDifficulty = ladder[currentIdx + 1];
+        } else if (acc <= 0.4 && currentIdx > 0) {
+          adaptedDifficulty = ladder[currentIdx - 1];
+        }
+      }
+      const effectiveDifficulty = adaptedDifficulty ?? difficulty;
+      const url = `${API_BASE_URL}/questions/quiz/${topic}?count=5${effectiveDifficulty ? `&difficulty=${effectiveDifficulty}` : ""}`;
+      const response = await fetch(url);
+      if (!response.ok) throw new Error("Failed to load more questions");
+      return { data: await response.json(), adaptedDifficulty };
+    },
+    onSuccess: ({ data, adaptedDifficulty }) => {
+      setQuestions((prev) => [...prev, ...data]);
+      if (adaptedDifficulty) {
+        toast.info(`Adaptive mode: switching to ${adaptedDifficulty} questions based on your accuracy`);
+      }
+    },
+    onError: () => toast.error("Failed to load more questions"),
+  });
+
   const handleLoadMore = async () => {
     setLoadingMore(true);
     try {
-      const url = `http://localhost:5000/api/questions/quiz/${topic}?count=5${difficulty ? `&difficulty=${difficulty}` : ""}`;
-      const response = await fetch(url);
-      const data = await response.json();
-      setQuestions((prev) => [...prev, ...data]);
-      toast.success("5 more questions added!");
-    } catch {
-      toast.error("Failed to load more questions");
+      await loadMoreMutation.mutateAsync(undefined);
     } finally {
       setLoadingMore(false);
     }
@@ -282,16 +395,23 @@ const AptitudeTest = ({
       ];
     }
 
-    const endTime = new Date();
-    const timeTaken = startTime
-      ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
-      : 0;
+      const endTime = new Date();
+      const timeTaken = startTime
+        ? Math.floor((endTime.getTime() - startTime.getTime()) / 1000)
+        : 0;
+
+      // Per-question time tracking
+      let timeSpentMap: Record<string, number> = {};
+      try {
+        timeSpentMap = JSON.parse(sessionStorage.getItem("aptitudeTimeSpent") || "{}");
+      } catch { /* ignore */ }
+      sessionStorage.removeItem("aptitudeTimeSpent");
 
     try {
-      const response = await fetch("http://localhost:5000/api/questions/quiz/submit", {
+      const response = await fetch(`${API_BASE_URL}/questions/quiz/submit`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: finalAnswers }),
+        body: JSON.stringify({ answers: finalAnswers, negativeMarking }),
       });
 
       const result = await response.json();
@@ -329,18 +449,40 @@ const AptitudeTest = ({
       sessionStorage.setItem("aptitudeTestResult", JSON.stringify(resultData));
       sessionStorage.setItem("aptitudeProctorLogs", JSON.stringify(proctorLogsRef.current));
 
-      // Also persist to backend for analytics
-      try {
-        await fetch("http://localhost:5000/api/questions/quiz/save-result", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            userId: user?.uid || "anonymous",
-            ...testResult,
-          }),
-        });
-      } catch {
-        // Analytics save is non-critical
+      // Also persist to backend for analytics — identity comes from the JWT;
+      // silently skipped for Firebase-only sessions without a backend token
+      if (localStorage.getItem("token")) {
+        try {
+          const saveResponse = await fetch(`${API_BASE_URL}/questions/quiz/save-result`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              ...getAuthHeaders(),
+            },
+            body: JSON.stringify({
+              ...testResult,
+              startTime: undefined,
+              endTime: undefined,
+              negativeMarking,
+              preset: `${topic}-${questions.length}q`,
+              selectedAnswers: (finalSelectedAnswers as Array<{ questionId: string }>).map((a) => ({
+                ...a,
+                timeSpentMs: timeSpentMap[a.questionId] ?? null,
+              })),
+            }),
+          });
+          // Percentile from the save response → result page
+          if (saveResponse.ok) {
+            const saveData = await saveResponse.json().catch(() => null);
+            if (saveData && typeof saveData.percentile === "number") {
+              sessionStorage.setItem("aptitudePercentile", String(saveData.percentile));
+            } else {
+              sessionStorage.removeItem("aptitudePercentile");
+            }
+          }
+        } catch {
+          // Analytics save is non-critical
+        }
       }
 
       toast.success(isPractice ? "Practice session completed!" : "Test completed!");
@@ -420,8 +562,12 @@ const AptitudeTest = ({
                       <p className="text-muted-foreground">Each question carries <span className="font-semibold text-foreground">1 mark</span></p>
                     </div>
                     <div className="flex items-start gap-3">
-                      <CheckCircle2 className="w-5 h-5 text-success mt-0.5 flex-shrink-0" />
-                      <p className="text-muted-foreground">No negative marking</p>
+                      <CheckCircle2 className={`w-5 h-5 mt-0.5 flex-shrink-0 ${negativeMarking ? "text-destructive" : "text-success"}`} />
+                      <p className="text-muted-foreground">
+                        {negativeMarking
+                          ? "Negative marking ON — each wrong answer deducts 0.25 marks; skipped questions are free"
+                          : "No negative marking"}
+                      </p>
                     </div>
                     <div className="flex items-start gap-3">
                       <XCircle className="w-5 h-5 text-destructive mt-0.5 flex-shrink-0" />
@@ -507,9 +653,25 @@ const AptitudeTest = ({
           <div className="flex-1 min-w-0">
             <Card className="p-8 border-2 border-border mb-6">
               <div className="mb-6">
-                <Badge variant="outline" className="mb-4">
-                  Question {currentQuestionIndex + 1}
-                </Badge>
+                <div className="flex items-center gap-2 mb-4">
+                  <Badge variant="outline">
+                    Question {currentQuestionIndex + 1}
+                  </Badge>
+                  {currentQuestion.difficulty && (
+                    <Badge
+                      variant="outline"
+                      className={
+                        currentQuestion.difficulty === "hard"
+                          ? "text-red-600 border-red-300"
+                          : currentQuestion.difficulty === "medium"
+                          ? "text-amber-600 border-amber-300"
+                          : "text-emerald-600 border-emerald-300"
+                      }
+                    >
+                      {currentQuestion.difficulty}
+                    </Badge>
+                  )}
+                </div>
                 <h3 className="text-2xl font-semibold text-foreground mb-2">
                   {currentQuestion.Question}
                 </h3>
@@ -585,6 +747,12 @@ const AptitudeTest = ({
                       The correct answer is <span className="font-semibold text-foreground">{currentQuestion.Answer}. {currentQuestion[`Option ${currentQuestion.Answer}` as keyof QuizQuestion]}</span>
                     </p>
                   )}
+                  {currentQuestion.Explanation && (
+                    <div className="mt-3 pt-3 border-t border-border/60">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-1">Explanation</p>
+                      <p className="text-sm text-muted-foreground">{currentQuestion.Explanation}</p>
+                    </div>
+                  )}
                 </div>
               )}
             </Card>
@@ -600,6 +768,20 @@ const AptitudeTest = ({
               </Button>
 
               <div className="flex items-center gap-3">
+                {/* Both modes: persist this question to the saved notebook */}
+                <Button
+                  onClick={toggleBookmark}
+                  variant="outline"
+                  className={`${
+                    bookmarked.has(questions[currentQuestionIndex]._id)
+                      ? "border-amber-500 bg-amber-500/10 text-amber-600"
+                      : "border-border text-muted-foreground"
+                  }`}
+                >
+                  <BookmarkCheck className={`w-4 h-4 mr-2 ${bookmarked.has(questions[currentQuestionIndex]._id) ? "fill-amber-500" : ""}`} />
+                  {bookmarked.has(questions[currentQuestionIndex]._id) ? "Saved" : "Save"}
+                </Button>
+
                 {/* Practice: skip button */}
                 {isPractice && !showExplanation && (
                   <Button

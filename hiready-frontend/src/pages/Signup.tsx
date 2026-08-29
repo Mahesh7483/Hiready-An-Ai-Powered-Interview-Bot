@@ -41,10 +41,20 @@ const Signup = () => {
       });
 
       toast.success(response.message || "Account created successfully!");
-      localStorage.setItem("user", JSON.stringify(response.user));
-      navigate("/dashboard");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to create account");
+      // Signup now auto-logins — persist the backend session
+      if (response.token) {
+        localStorage.setItem("token", response.token);
+      }
+      if (response.user) {
+        localStorage.setItem("user", JSON.stringify(response.user));
+        navigate("/dashboard");
+      } else {
+        // Fallback: no session returned — ask the user to log in
+        navigate("/login");
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+      toast.error(message || "Failed to create account");
       console.error("Signup error:", error);
     } finally {
       setIsLoading(false);
@@ -57,8 +67,9 @@ const Signup = () => {
       const userData = await signInWithGoogle();
       toast.success(`Welcome, ${userData.displayName || "User"}!`);
       navigate("/dashboard");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to sign up with Google");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+      toast.error(message || "Failed to sign up with Google");
       console.error("Google sign-up error:", error);
     } finally {
       setGoogleLoading(false);

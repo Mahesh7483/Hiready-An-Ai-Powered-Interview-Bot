@@ -2,7 +2,7 @@ import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { ArrowRight, BookOpen, ShieldCheck, BarChart3 } from "lucide-react";
+import { ArrowRight, BookOpen, ShieldCheck, BarChart3, NotebookPen, Trophy } from "lucide-react";
 
 interface SectionCard {
   id: string;
@@ -123,6 +123,38 @@ const AptitudePlayCards = () => {
               </CardContent>
             </Card>
           ))}
+        </div>
+
+        {/* Extra tools row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8 max-w-2xl mx-auto">
+          <Card
+            className="border border-border shadow-md hover:shadow-lg transition-all cursor-pointer group"
+            onClick={() => navigate("/aptitude/notebook")}
+          >
+            <CardHeader className="pb-2">
+              <div className="w-11 h-11 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <NotebookPen className="w-5 h-5" />
+              </div>
+              <CardTitle className="text-lg">Wrong-Answer Notebook</CardTitle>
+              <CardDescription className="text-xs">
+                Every question you got wrong, with answers — master your weak spots
+              </CardDescription>
+            </CardHeader>
+          </Card>
+          <Card
+            className="border border-border shadow-md hover:shadow-lg transition-all cursor-pointer group"
+            onClick={() => navigate("/leaderboard")}
+          >
+            <CardHeader className="pb-2">
+              <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
+                <Trophy className="w-5 h-5" />
+              </div>
+              <CardTitle className="text-lg">Leaderboard</CardTitle>
+              <CardDescription className="text-xs">
+                Weekly and all-time rankings — climb the ladder
+              </CardDescription>
+            </CardHeader>
+          </Card>
         </div>
       </div>
     </DashboardLayout>

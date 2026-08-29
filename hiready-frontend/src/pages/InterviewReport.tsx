@@ -6,9 +6,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, MessageSquare, CheckCircle2, AlertTriangle, AlertCircle, Loader2, FileText, ShieldAlert } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend } from "recharts";
-import Groq from "groq-sdk";
 import { toast } from "sonner";
+import { attachInterviewAnalysis } from "@/lib/historyApi";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { API_BASE_URL, getAuthHeaders } from "@/lib/api";
 
 interface ConversationEntry {
   role: "interviewer" | "user";
@@ -59,6 +60,11 @@ const InterviewReport = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [proctorLogs, setProctorLogs] = useState<ProctorLogEntry[]>([]);
+  const [integrity, setIntegrity] = useState<{ violations: number; maxViolations: number; terminated: boolean } | null>(null);
+  const [metrics, setMetrics] = useState<{
+    answers: Array<{ durationSec: number; words: number; wpm: number; fillers: number }>;
+    totals: { words: number; fillers: number; speakingSec: number; avgWpm: number };
+  } | null>(null);
   const [reportData, setReportData] = useState<AnalysisResult>({
     role: "Front-end Developer",
     confidenceScore: 0,
@@ -85,6 +91,7 @@ const InterviewReport = () => {
 
   useEffect(() => {
     loadAndAnalyzeInterview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional mount-only: loads conversation from sessionStorage once
   }, []);
 
   const loadAndAnalyzeInterview = async () => {
@@ -96,6 +103,26 @@ const InterviewReport = () => {
     if (savedProctorLogs) {
       try {
         setProctorLogs(JSON.parse(savedProctorLogs));
+      } catch {
+        // ignore malformed data
+      }
+    }
+
+    // Load integrity record (violation count / termination flag)
+    const savedIntegrity = sessionStorage.getItem("interviewIntegrity");
+    if (savedIntegrity) {
+      try {
+        setIntegrity(JSON.parse(savedIntegrity));
+      } catch {
+        // ignore malformed data
+      }
+    }
+
+    // Load delivery metrics (WPM / fillers / answer durations)
+    const savedMetrics = sessionStorage.getItem("interviewMetrics");
+    if (savedMetrics) {
+      try {
+        setMetrics(JSON.parse(savedMetrics));
       } catch {
         // ignore malformed data
       }
@@ -122,100 +149,36 @@ const InterviewReport = () => {
     setIsAnalyzing(true);
 
     try {
-      const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "";
-      const groq = new Groq({ apiKey: GROQ_API_KEY, dangerouslyAllowBrowser: true });
-
-      // Format conversation for analysis
+      // Analysis runs server-side — no API key is exposed to the browser
       const transcript = conversationData
         .map((entry) => `${entry.role === "interviewer" ? "INTERVIEWER" : "CANDIDATE"}: ${entry.text}`)
         .join("\n\n");
 
-      const analysisPrompt = `You are an expert interview analyst. Analyze the following interview transcript and provide a detailed assessment.
+      const savedConfig = sessionStorage.getItem("interviewConfig");
+      const targetRole = savedConfig ? JSON.parse(savedConfig).role : undefined;
 
-INTERVIEW TRANSCRIPT:
-${transcript}
-
-Please provide a comprehensive analysis in the following JSON format (respond ONLY with valid JSON, no additional text):
-{
-  "role": "Identified role/position being interviewed for",
-  "confidenceScore": <number 0-100>,
-  "contentScore": <number 0-100>,
-  "overallScore": <number 0-100>,
-  "strengths": [
-    "Strength point 1",
-    "Strength point 2",
-    "Strength point 3"
-  ],
-  "improvements": [
-    "Improvement area 1",
-    "Improvement area 2",
-    "Improvement area 3"
-  ],
-  "rejectionReasons": [
-    "Potential rejection reason 1",
-    "Potential rejection reason 2",
-    "Potential rejection reason 3"
-  ],
-  "performanceBreakdown": {
-    "technicalSkills": <number 0-100>,
-    "communication": <number 0-100>,
-    "problemSolving": <number 0-100>,
-    "confidence": <number 0-100>
-  },
-  "skillsAssessment": {
-    "technical": <number 0-100>,
-    "communication": <number 0-100>,
-    "leadership": <number 0-100>,
-    "problemSolving": <number 0-100>,
-    "adaptability": <number 0-100>,
-    "teamwork": <number 0-100>
-  }
-}
-
-Guidelines:
-- confidenceScore: Communication clarity, confidence, articulation (0-100)
-- contentScore: Relevance, depth, technical accuracy of answers (0-100)
-- overallScore: Average of confidence and content scores
-- strengths: 3-5 specific positive observations
-- improvements: 3-5 specific areas needing development
-- rejectionReasons: 3-5 potential reasons that could lead to rejection
-- performanceBreakdown: Detailed scores for key performance areas
-  * technicalSkills: Technical knowledge and expertise demonstrated
-  * communication: Clarity, articulation, and expression
-  * problemSolving: Analytical thinking and problem-solving approach
-  * confidence: Self-assurance and composure during interview
-- skillsAssessment: Comprehensive skills evaluation
-  * technical: Technical competency and knowledge
-  * communication: Verbal and non-verbal communication effectiveness
-  * leadership: Leadership potential and initiative
-  * problemSolving: Critical thinking and analytical abilities
-  * adaptability: Flexibility and adaptiveness to situations
-  * teamwork: Collaboration and team-oriented mindset
-- Ensure all scores are realistic numbers between 0-100
-- Base analysis strictly on the actual transcript content`;
-
-      const response = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [
-          {
-            role: "user",
-            content: analysisPrompt,
-          },
-        ],
-        temperature: 0.3,
-        max_tokens: 2000,
+      const response = await fetch(`${API_BASE_URL}/ai/interview-analyze`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getAuthHeaders(),
+        },
+        body: JSON.stringify({ transcript, targetRole }),
       });
 
-      const analysisText = response.choices[0]?.message?.content || "";
-      
-      // Parse JSON response
-      const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const analysis: AnalysisResult = JSON.parse(jsonMatch[0]);
-        setReportData(analysis);
-        toast.success("Interview analysis completed!");
-      } else {
-        throw new Error("Failed to parse analysis response");
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.error || `Analysis failed (${response.status})`);
+      }
+
+      const analysis: AnalysisResult = await response.json();
+      setReportData(analysis);
+      toast.success("Interview analysis completed!");
+
+      // Attach the analysis to the persisted session (if it was saved)
+      const savedSessionId = sessionStorage.getItem("interviewSessionId");
+      if (savedSessionId) {
+        attachInterviewAnalysis(savedSessionId, analysis);
       }
     } catch (error) {
       console.error("Error analyzing interview:", error);
@@ -573,6 +536,81 @@ Guidelines:
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Delivery analytics — WPM, fillers, pacing */}
+        {metrics && metrics.answers.length > 0 && (
+          <Card className="border border-border mb-6 print-hide">
+            <CardHeader>
+              <CardTitle className="text-lg">Delivery Analytics</CardTitle>
+              <CardDescription>How you spoke — pace, verbosity, and filler words</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-5">
+                {[
+                  { label: "Avg Pace", value: `${metrics.totals.avgWpm}`, sub: "words/min", good: metrics.totals.avgWpm >= 110 && metrics.totals.avgWpm <= 160 },
+                  { label: "Total Spoken", value: `${metrics.totals.words}`, sub: "words" },
+                  { label: "Filler Words", value: `${metrics.totals.fillers}`, sub: "um, like, you know…", good: metrics.totals.fillers <= Math.max(3, metrics.answers.length) },
+                  { label: "Speaking Time", value: `${Math.round(metrics.totals.speakingSec / 60)}m`, sub: `${metrics.answers.length} answers` },
+                ].map((s) => (
+                  <div key={s.label} className="p-4 rounded-lg bg-muted/30 border border-border">
+                    <p className="text-xs text-muted-foreground">{s.label}</p>
+                    <p className={`text-2xl font-bold ${s.good === undefined ? "" : s.good ? "text-success" : "text-warning"}`}>
+                      {s.value}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">{s.sub}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="space-y-2">
+                {metrics.answers.map((a, i) => (
+                  <div key={i} className="flex items-center gap-3 p-2.5 rounded-lg bg-muted/20 border border-border text-xs">
+                    <span className="font-semibold text-muted-foreground w-16 shrink-0">Answer {i + 1}</span>
+                    <span>{a.wpm} wpm</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span>{a.durationSec}s</span>
+                    <span className="text-muted-foreground">·</span>
+                    <span className={a.fillers > 3 ? "text-destructive font-medium" : a.fillers > 0 ? "text-warning" : "text-success"}>
+                      {a.fillers} filler{a.fillers === 1 ? "" : "s"}
+                    </span>
+                    <div className="flex-1 min-w-[80px] h-1.5 rounded-full bg-muted overflow-hidden ml-auto">
+                      <div
+                        className={`h-full rounded-full ${a.wpm >= 110 && a.wpm <= 160 ? "bg-success" : "bg-warning"}`}
+                        style={{ width: `${Math.min(100, (a.wpm / 200) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+                <p className="text-xs text-muted-foreground pt-1">
+                  Ideal interview pace is roughly 110–160 words per minute.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Integrity flag — terminated for proctoring violations */}
+        {integrity && integrity.violations > 0 && (
+          <Card
+            className={`border-2 mb-6 ${
+              integrity.terminated ? "border-destructive/60 bg-destructive/5" : "border-warning/50 bg-warning/5"
+            }`}
+          >
+            <CardContent className="pt-6 flex items-start gap-3">
+              <ShieldAlert className={`w-6 h-6 shrink-0 ${integrity.terminated ? "text-destructive" : "text-warning"}`} />
+              <div>
+                <p className={`font-semibold ${integrity.terminated ? "text-destructive" : "text-warning"}`}>
+                  {integrity.terminated
+                    ? "Interview TERMINATED — proctoring violation limit reached"
+                    : `Proctoring warnings: ${integrity.violations} of ${integrity.maxViolations} allowed`}
+                </p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {integrity.violations} violation{integrity.violations === 1 ? "" : "s"} were recorded during this session
+                  {integrity.terminated && " and the interview was force-ended when the limit of " + integrity.maxViolations + " was hit"}. This record is saved in the proctoring log.
+                </p>
+              </div>
             </CardContent>
           </Card>
         )}

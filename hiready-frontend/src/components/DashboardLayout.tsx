@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { GraduationCap, LayoutDashboard, FileText, MessageSquare, Brain, LogOut, Menu, X } from "lucide-react";
+import { GraduationCap, LayoutDashboard, FileText, MessageSquare, Brain, LogOut, Menu, X, TerminalSquare, ClipboardList } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
@@ -44,6 +44,8 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
     { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { path: "/resume-analysis", label: "Resume Analysis", icon: FileText },
     { path: "/interview", label: "Mock Interview", icon: MessageSquare },
+    { path: "/coding-interview", label: "Technical Round", icon: TerminalSquare },
+    { path: "/assessments", label: "Assessments", icon: ClipboardList },
     { path: "/aptitude", label: "Aptitude", icon: Brain },
   ];
 

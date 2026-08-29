@@ -9,10 +9,12 @@ import AptitudeTest from "./AptitudeTest";
 
 const topics = [
   { value: "logical", label: "Logical Reasoning" },
+  { value: "quantitative", label: "Quantitative Aptitude" },
+  { value: "verbal", label: "Verbal Ability" },
+  { value: "data-interpretation", label: "Data Interpretation" },
   { value: "coding-theory", label: "Coding Theory" },
   { value: "blood-relation", label: "Blood Relations" },
   { value: "number-series", label: "Number Series" },
-  { value: "quantitative-aptitude", label: "Quantitative Aptitude" },
   { value: "puzzles", label: "Puzzles" },
 ];
 

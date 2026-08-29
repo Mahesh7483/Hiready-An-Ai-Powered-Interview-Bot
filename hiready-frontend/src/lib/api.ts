@@ -1,4 +1,40 @@
-const API_BASE_URL = "http://localhost:5000/api";
+export const API_BASE_URL =
+  import.meta.env.VITE_API_URL || "http://localhost:5000/api";
+
+/**
+ * Returns auth headers for API calls that require the backend JWT.
+ */
+export function getAuthHeaders(): Record<string, string> {
+  const token = localStorage.getItem("token");
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+/**
+ * fetch wrapper that attaches the backend JWT when present.
+ */
+export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(`${API_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      ...(init.headers || {}),
+      ...getAuthHeaders(),
+    },
+  });
+}
+
+/**
+ * apiFetch + JSON parsing + error surfacing. Throws Error with the
+ * server's message on non-OK responses.
+ */
+export async function apiJson<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await apiFetch(path, init);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string; message?: string }).error ||
+      (err as { message?: string }).message || `Request failed (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
 
 export interface LoginRequest {
   email: string;
@@ -34,7 +70,7 @@ export const authAPI = {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || "Signup failed");
+      throw new Error(error.message || error.error || "Signup failed");
     }
 
     return response.json();
@@ -51,7 +87,7 @@ export const authAPI = {
 
     if (!response.ok) {
       const error = await response.json();
-      throw new Error(error.message || "Login failed");
+      throw new Error(error.message || error.error || "Login failed");
     }
 
     return response.json();

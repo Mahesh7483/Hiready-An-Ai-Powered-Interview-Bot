@@ -28,12 +28,21 @@ const Login = () => {
 
       const response = await authAPI.login({ email, password });
 
+      if (!response.token) {
+        toast.error("Sign-in did not return a session. Please try again.");
+        setIsLoading(false);
+        return;
+      }
+
       toast.success(response.message || "Login successful!");
-      localStorage.setItem("token", response.token || "");
-      localStorage.setItem("user", JSON.stringify(response.user));
+      localStorage.setItem("token", response.token);
+      if (response.user) {
+        localStorage.setItem("user", JSON.stringify(response.user));
+      }
       navigate("/dashboard");
-    } catch (error: any) {
-      toast.error(error.message || "Login failed");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+      toast.error(message || "Login failed");
       console.error("Login error:", error);
     } finally {
       setIsLoading(false);
@@ -46,8 +55,9 @@ const Login = () => {
       const userData = await signInWithGoogle();
       toast.success(`Welcome back, ${userData.displayName || "User"}!`);
       navigate("/dashboard");
-    } catch (error: any) {
-      toast.error(error.message || "Failed to sign in with Google");
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "";
+      toast.error(message || "Failed to sign in with Google");
       console.error("Google sign-in error:", error);
     } finally {
       setGoogleLoading(false);

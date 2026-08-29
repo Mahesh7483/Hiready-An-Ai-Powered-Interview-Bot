@@ -48,10 +48,12 @@ const testTypes: TestType[] = [
 
 const topicOptions = [
   { value: "logical", label: "Logical Reasoning" },
+  { value: "quantitative", label: "Quantitative Aptitude" },
+  { value: "verbal", label: "Verbal Ability" },
+  { value: "data-interpretation", label: "Data Interpretation" },
   { value: "coding-theory", label: "Coding Theory" },
   { value: "blood-relation", label: "Blood Relations" },
   { value: "number-series", label: "Number Series" },
-  { value: "quantitative-aptitude", label: "Quantitative Aptitude" },
   { value: "puzzles", label: "Puzzles" },
 ];
 
@@ -60,6 +62,8 @@ const AptitudeTestPage = () => {
   const [started, setStarted] = useState(false);
   const [selectedType, setSelectedType] = useState<TestType>(testTypes[0]);
   const [selectedTopic, setSelectedTopic] = useState("logical");
+  const [negativeMarking, setNegativeMarking] = useState(false);
+  const [adaptive, setAdaptive] = useState(false);
 
   if (started) {
     return (
@@ -68,6 +72,8 @@ const AptitudeTestPage = () => {
         topic={selectedType.id === "topic" ? selectedTopic : selectedType.topic}
         questionCount={selectedType.questionCount}
         timerMinutes={selectedType.timerMinutes}
+        negativeMarking={negativeMarking}
+        adaptive={adaptive}
       />
     );
   }
@@ -156,6 +162,46 @@ const AptitudeTestPage = () => {
               </CardContent>
             </Card>
           )}
+
+          {/* Negative marking toggle */}
+          <Card
+            className={`border-2 cursor-pointer transition-all ${
+              negativeMarking ? "border-destructive/50 bg-destructive/5" : "border-border"
+            }`}
+            onClick={() => setNegativeMarking((v) => !v)}
+          >
+            <CardContent className="py-4 flex items-center gap-3">
+              <input type="checkbox" checked={negativeMarking} readOnly className="w-4 h-4 accent-[hsl(var(--destructive))]" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Negative Marking <span className="text-xs font-normal text-muted-foreground">(-0.25 per wrong answer)</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Real exam conditions: wrong answers deduct ¼ mark, unanswered questions are free. Your leaderboard rank uses accuracy either way.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Adaptive difficulty toggle */}
+          <Card
+            className={`border-2 cursor-pointer transition-all ${
+              adaptive ? "border-sky-500/50 bg-sky-500/5" : "border-border"
+            }`}
+            onClick={() => setAdaptive((v) => !v)}
+          >
+            <CardContent className="py-4 flex items-center gap-3">
+              <input type="checkbox" checked={adaptive} readOnly className="w-4 h-4 accent-sky-500" />
+              <div>
+                <p className="text-sm font-semibold text-foreground">
+                  Adaptive Difficulty <span className="text-xs font-normal text-muted-foreground">(questions match your level)</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Questions get harder as your recent accuracy improves and easier when you struggle. Starts at your level based on past results.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
 
           {/* Instructions */}
           <Card className="border border-border bg-violet-50/50 dark:bg-violet-950/20">

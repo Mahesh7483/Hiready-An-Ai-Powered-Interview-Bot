@@ -1,6 +1,7 @@
 /**
  * Utility functions for Voice Interview feature
  */
+import { checkAIAvailability } from "@/lib/llm";
 
 /**
  * Check if browser supports required features
@@ -73,29 +74,22 @@ export const checkMicrophoneAvailability = async (): Promise<{
 };
 
 /**
- * Validate API keys are configured
+ * Validate that AI services are available via the backend.
+ * API keys live server-side now, so we check backend reachability instead.
  */
-export const validateApiKeys = (): {
+export const validateAIAvailability = async (): Promise<{
   isValid: boolean;
   missingKeys: string[];
-} => {
-  const missingKeys: string[] = [];
-
-  const deepgramKey = import.meta.env.VITE_DEEPGRAM_API_KEY;
-  const groqKey = import.meta.env.VITE_GROQ_API_KEY;
-
-  if (!deepgramKey || deepgramKey.trim() === "") {
-    missingKeys.push("VITE_DEEPGRAM_API_KEY");
+}> => {
+  try {
+    const status = await checkAIAvailability();
+    if (!status.available) {
+      return { isValid: false, missingKeys: [status.error || "Backend AI service"] };
+    }
+    return { isValid: true, missingKeys: [] };
+  } catch {
+    return { isValid: false, missingKeys: ["Cannot reach the backend server"] };
   }
-
-  if (!groqKey || groqKey.trim() === "") {
-    missingKeys.push("VITE_GROQ_API_KEY");
-  }
-
-  return {
-    isValid: missingKeys.length === 0,
-    missingKeys,
-  };
 };
 
 /**
@@ -164,26 +158,27 @@ export const logInterviewStats = (stats: {
 /**
  * Get detailed error message for common issues
  */
-export const getErrorMessage = (error: any): string => {
-  if (error.name === "NotAllowedError") {
+export const getErrorMessage = (error: unknown): string => {
+  const err = error as { name?: string; message?: string };
+  if (err.name === "NotAllowedError") {
     return "Microphone access denied. Please grant permission and try again.";
   }
-  if (error.name === "NotFoundError") {
+  if (err.name === "NotFoundError") {
     return "No microphone found. Please connect a microphone and try again.";
   }
-  if (error.name === "NotReadableError") {
+  if (err.name === "NotReadableError") {
     return "Microphone is being used by another application.";
   }
-  if (error.message?.includes("401")) {
+  if (err.message?.includes("401")) {
     return "Invalid API key. Please check your configuration.";
   }
-  if (error.message?.includes("429")) {
+  if (err.message?.includes("429")) {
     return "API rate limit exceeded. Please try again later.";
   }
-  if (error.message?.includes("network")) {
+  if (err.message?.includes("network")) {
     return "Network error. Please check your internet connection.";
   }
-  return error.message || "An unexpected error occurred.";
+  return err.message || "An unexpected error occurred.";
 };
 
 /**
@@ -201,7 +196,7 @@ export const retryAsync = async <T>(
   maxRetries: number = 3,
   delayMs: number = 1000
 ): Promise<T> => {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let i = 0; i < maxRetries; i++) {
     try {

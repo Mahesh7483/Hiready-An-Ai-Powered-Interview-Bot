@@ -1,17 +1,63 @@
-import Groq from "groq-sdk";
 import * as pdfjsLib from "pdfjs-dist";
 import mammoth from "mammoth";
+import { API_BASE_URL, getAuthHeaders } from "./api";
+import PdfWorker from "./pdfWorker?worker";
 
-// Configure pdf.js worker from public folder
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
+// Bundle the worker ourselves (with hex-method polyfills baked in) instead of
+// loading /pdf.worker.min.mjs — keeps the worker version locked to pdfjs-dist
+// and fixes "toHex is not a function" on older browsers.
+pdfjsLib.GlobalWorkerOptions.workerPort = new PdfWorker();
+
+export interface ContactInfo {
+  email: string;
+  phone: string;
+  linkedin: string;
+  github: string;
+  portfolio: string;
+}
+
+export interface ExperienceEntry {
+  company: string;
+  title: string;
+  startDate: string;
+  endDate: string;
+  duration: string;
+}
+
+export interface SectionAudit {
+  name: string;
+  present: boolean;
+  wordCount: number;
+  score: number;
+  feedback: string;
+}
+
+export interface BulletAnalysis {
+  totalBullets: number;
+  quantifiedBullets: number;
+  actionVerbScore: number;
+  weakPhrases: string[];
+}
+
+export interface SuggestedBullet {
+  original: string;
+  rewritten: string;
+  reason: string;
+}
 
 export interface ResumeAnalysisResult {
   candidateName: string;
   targetRole: string;
   experienceLevel: string;
+  contactInfo?: ContactInfo;
   extractedSkills: string[];
   education: string[];
+  certifications?: string[];
   experienceSummary: string;
+  experience?: ExperienceEntry[];
+  sections?: SectionAudit[];
+  bulletAnalysis?: BulletAnalysis;
+  suggestedBullets?: SuggestedBullet[];
   atsScore: number;
   keywordMatch: number;
   formatScore: number;
@@ -25,10 +71,27 @@ export interface ResumeAnalysisResult {
     tools: number;
     languages: number;
   };
+  /** One-sentence overall verdict (v2.1) */
+  verdict?: string;
+  /** Role keywords absent from the resume (v2.1) */
+  missingKeywords?: string[];
+  /** Total words in the resume text (v2.1) */
+  wordCount?: number;
+}
+
+/** Error thrown when a PDF has no extractable text (scanned/image-only) */
+export class ScannedResumeError extends Error {
+  constructor() {
+    super(
+      "This looks like a scanned or image-only resume with no selectable text. Please upload a text-based PDF or DOCX."
+    );
+    this.name = "ScannedResumeError";
+  }
 }
 
 /**
- * Extract text from a PDF file using pdfjs-dist
+ * Extract text from a PDF file using pdfjs-dist.
+ * Throws ScannedResumeError when the PDF yields (nearly) no text.
  */
 async function extractTextFromPDF(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
@@ -39,12 +102,20 @@ async function extractTextFromPDF(file: File): Promise<string> {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
     const pageText = content.items
-      .map((item: any) => item.str)
+      .map((item) => ("str" in item ? item.str : ""))
       .join(" ");
     textParts.push(pageText);
   }
 
-  return textParts.join("\n\n");
+  const fullText = textParts.join("\n\n");
+
+  // Scanned/image-only detection: essentially no text across all pages
+  const avgCharsPerPage = fullText.replace(/\s+/g, "").length / Math.max(pdf.numPages, 1);
+  if (fullText.replace(/\s+/g, "").length < 200 || avgCharsPerPage < 20) {
+    throw new ScannedResumeError();
+  }
+
+  return fullText;
 }
 
 /**
@@ -57,7 +128,7 @@ async function extractTextFromDOCX(file: File): Promise<string> {
 }
 
 /**
- * Extract text from an uploaded resume file (PDF or DOCX)
+ * Extract text from an uploaded resume file (PDF, DOCX, or TXT)
  */
 export async function extractResumeText(file: File): Promise<string> {
   const fileName = file.name.toLowerCase();
@@ -66,100 +137,106 @@ export async function extractResumeText(file: File): Promise<string> {
     return extractTextFromPDF(file);
   } else if (fileName.endsWith(".docx") || fileName.endsWith(".doc")) {
     return extractTextFromDOCX(file);
+  } else if (fileName.endsWith(".txt")) {
+    return file.text();
   }
 
-  throw new Error("Unsupported file format. Please upload a PDF or DOCX file.");
+  throw new Error("Unsupported file format. Please upload a PDF, DOCX, or TXT file.");
 }
 
 /**
- * Analyze resume text using the Groq LLM
+ * Analyze resume text — the LLM call runs on the backend, so no API key
+ * is exposed to the browser. JSON parsing, retries, and shape validation
+ * happen server-side.
  */
 export async function analyzeResumeWithLLM(
   resumeText: string,
   targetRole: string,
-  experienceLevel: string
+  experienceLevel: string,
+  jobDescription?: string
 ): Promise<ResumeAnalysisResult> {
-  const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || "";
-  const groq = new Groq({ apiKey: GROQ_API_KEY, dangerouslyAllowBrowser: true });
-
-  const analysisPrompt = `You are an expert resume analyst and ATS (Applicant Tracking System) specialist. Analyze the following resume text and provide a detailed assessment.
-
-TARGET ROLE: ${targetRole}
-EXPERIENCE LEVEL: ${experienceLevel}
-
-RESUME TEXT:
-${resumeText}
-
-Provide a comprehensive analysis in the following JSON format (respond ONLY with valid JSON, no additional text):
-{
-  "candidateName": "Extracted candidate name from resume, or 'Unknown' if not found",
-  "targetRole": "${targetRole}",
-  "experienceLevel": "${experienceLevel}",
-  "extractedSkills": ["skill1", "skill2", "skill3", "...up to 15 most relevant skills"],
-  "education": ["Degree/Certification 1", "Degree/Certification 2"],
-  "experienceSummary": "Brief 1-2 sentence summary of the candidate's experience",
-  "atsScore": <number 0-100, how well the resume would pass ATS systems>,
-  "keywordMatch": <number 0-100, relevance of keywords to the target role>,
-  "formatScore": <number 0-100, quality of resume structure and formatting>,
-  "overallScore": <number 0-100, weighted average of all scores>,
-  "strengths": [
-    "Specific strength 1",
-    "Specific strength 2",
-    "Specific strength 3",
-    "Specific strength 4"
-  ],
-  "improvements": [
-    "Specific improvement suggestion 1",
-    "Specific improvement suggestion 2",
-    "Specific improvement suggestion 3",
-    "Specific improvement suggestion 4"
-  ],
-  "criticalIssues": [
-    "Critical issue 1 that needs immediate attention",
-    "Critical issue 2",
-    "Critical issue 3"
-  ],
-  "skillsDistribution": {
-    "technical": <number, percentage of technical/hard skills>,
-    "softSkills": <number, percentage of soft/interpersonal skills>,
-    "tools": <number, percentage of tools/platforms/frameworks>,
-    "languages": <number, percentage of programming/spoken languages>
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/ai/resume-analyze`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...getAuthHeaders(),
+      },
+      body: JSON.stringify({ resumeText, targetRole, experienceLevel, jobDescription }),
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach the API server (${API_BASE_URL}). Check that the backend is running and try again.`
+    );
   }
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Analysis failed (${response.status})`);
+  }
+
+  const analysis: ResumeAnalysisResult = await response.json();
+
+  // Basic shape validation of the parsed result
+  if (
+    typeof analysis.overallScore !== "number" ||
+    !Array.isArray(analysis.extractedSkills)
+  ) {
+    throw new Error("Received a malformed analysis from the AI service");
+  }
+
+  return analysis;
 }
 
-Guidelines:
-- atsScore: Evaluate ATS compatibility based on keyword usage, formatting, section structure, and standard headings
-- keywordMatch: How well the resume keywords align with the target role "${targetRole}"
-- formatScore: Assess structure, readability, consistent formatting, and proper sections
-- overallScore: Weighted average (ATS 40%, Keywords 35%, Format 25%)
-- strengths: 3-5 specific positive observations from the actual resume content
-- improvements: 3-5 actionable suggestions for the target role
-- criticalIssues: 2-4 issues that could cause ATS rejection or poor impression
-- skillsDistribution: Must sum to 100
-- extractedSkills: List actual skills found in the resume
-- education: List actual education/certifications found
-- Base all analysis strictly on the actual resume content provided`;
+// ── Resume+ AI tools ────────────────────────────────────────────────────
 
-  const response = await groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
-    messages: [
-      {
-        role: "user",
-        content: analysisPrompt,
-      },
-    ],
-    temperature: 0.3,
-    max_tokens: 2000,
+async function postAiTool<T>(path: string, body: Record<string, unknown>): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}/ai/${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    body: JSON.stringify(body),
   });
-
-  const analysisText = response.choices[0]?.message?.content || "";
-
-  // Parse JSON response
-  const jsonMatch = analysisText.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    const analysis: ResumeAnalysisResult = JSON.parse(jsonMatch[0]);
-    return analysis;
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Request failed (${response.status})`);
   }
+  return response.json() as Promise<T>;
+}
 
-  throw new Error("Failed to parse analysis response from LLM");
+export async function generateCoverLetter(payload: {
+  resumeText: string;
+  targetRole: string;
+  jobDescription?: string;
+  companyName?: string;
+}): Promise<string> {
+  const data = await postAiTool<{ letter: string }>("cover-letter", payload);
+  if (!data.letter) throw new Error("The AI returned an empty cover letter");
+  return data.letter;
+}
+
+export async function generateImprovedResume(payload: {
+  resumeText: string;
+  targetRole: string;
+  missingKeywords?: string[];
+}): Promise<string> {
+  const data = await postAiTool<{ improvedResume: string }>("improve-resume", payload);
+  if (!data.improvedResume) throw new Error("The AI returned an empty resume");
+  return data.improvedResume;
+}
+
+export interface SkillRecommendation {
+  skill: string;
+  recommendation: string;
+}
+
+export async function fetchSkillRecommendations(
+  missingKeywords: string[],
+  targetRole: string
+): Promise<SkillRecommendation[]> {
+  const data = await postAiTool<{ recommendations: SkillRecommendation[] }>(
+    "skill-recommendations",
+    { missingKeywords, targetRole }
+  );
+  return data.recommendations ?? [];
 }

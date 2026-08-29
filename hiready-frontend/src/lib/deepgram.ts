@@ -1,17 +1,37 @@
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
+import type { ListenLiveClient } from "@deepgram/sdk";
+import { API_BASE_URL, getAuthHeaders } from "./api";
 
-// Deepgram configuration
-const DEEPGRAM_API_KEY = import.meta.env.VITE_DEEPGRAM_API_KEY || "";
+/** Shape of the Deepgram live transcript message we consume */
+interface DeepgramResultsMessage {
+  channel?: {
+    alternatives?: Array<{ transcript?: string }>;
+  };
+  is_final?: boolean;
+}
+
+/**
+ * Fetches a short-lived Deepgram access token from the backend.
+ * The real Deepgram API key never leaves the server.
+ */
+async function getAccessToken(): Promise<string> {
+  const res = await fetch(`${API_BASE_URL}/ai/stt-token`, {
+    headers: getAuthHeaders(),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to obtain speech token (${res.status})`);
+  }
+  const data = await res.json();
+  if (!data.accessToken) {
+    throw new Error("Speech service is not configured on the backend");
+  }
+  return data.accessToken;
+}
 
 export class DeepgramService {
-  private deepgram;
-  private connection: any = null;
+  private connection: ListenLiveClient | null = null;
   private mediaRecorder: MediaRecorder | null = null;
   private audioStream: MediaStream | null = null;
-
-  constructor() {
-    this.deepgram = createClient(DEEPGRAM_API_KEY);
-  }
 
   /**
    * Initialize live transcription with Deepgram
@@ -32,14 +52,18 @@ export class DeepgramService {
         },
       });
 
-      // Create Deepgram live connection
-      this.connection = this.deepgram.listen.live({
+      // Mint a short-lived access token via the backend
+      const accessToken = await getAccessToken();
+
+      // Create Deepgram live connection authenticated by the ephemeral token
+      const deepgram = createClient({ accessToken });
+      this.connection = deepgram.listen.live({
         model: "nova-2",
         language: "en",
         smart_format: true,
         interim_results: true,
         punctuate: true,
-        utterance_end_ms: 1000,
+        utterance_end_ms: 2000,
       });
 
       // Handle connection open
@@ -61,10 +85,10 @@ export class DeepgramService {
       });
 
       // Handle transcription results
-      this.connection.on(LiveTranscriptionEvents.Transcript, (data: any) => {
+      this.connection.on(LiveTranscriptionEvents.Transcript, (data: DeepgramResultsMessage) => {
         const transcript = data.channel?.alternatives?.[0]?.transcript;
         const isFinal = data.is_final;
-        
+
         if (transcript && transcript.trim() !== "") {
           onTranscript(transcript, isFinal);
         }
@@ -88,7 +112,6 @@ export class DeepgramService {
       this.connection.on(LiveTranscriptionEvents.Close, () => {
         console.log("Deepgram connection closed");
       });
-
     } catch (error) {
       console.error("Failed to start live transcription:", error);
       if (onError) onError(error as Error);
@@ -135,29 +158,26 @@ export class DeepgramService {
   }
 
   /**
-   * Transcribe pre-recorded audio file
+   * Transcribe pre-recorded audio file — routed through the backend proxy
    */
   async transcribeAudioFile(audioBlob: Blob): Promise<string> {
     try {
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const audio = new Uint8Array(arrayBuffer);
+      const res = await fetch(`${API_BASE_URL}/ai/transcribe`, {
+        method: "POST",
+        headers: {
+          "Content-Type": audioBlob.type || "audio/webm",
+          ...getAuthHeaders(),
+        },
+        body: audioBlob,
+      });
 
-      const { result, error } = await this.deepgram.listen.prerecorded.transcribeFile(
-        audio,
-        {
-          model: "nova-2",
-          language: "en",
-          smart_format: true,
-          punctuate: true,
-        }
-      );
-
-      if (error) {
-        throw error;
+      if (!res.ok) {
+        const error = await res.json().catch(() => ({}));
+        throw new Error(error.error || `Transcription failed (${res.status})`);
       }
 
-      const transcript = result?.results?.channels?.[0]?.alternatives?.[0]?.transcript || "";
-      return transcript;
+      const data = await res.json();
+      return data.transcript || "";
     } catch (error) {
       console.error("Failed to transcribe audio file:", error);
       throw error;

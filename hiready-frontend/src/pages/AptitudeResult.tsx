@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, XCircle, Clock, Award, Home, Target, AlertTriangle, BarChart3 } from "lucide-react";
+import { CheckCircle2, XCircle, Clock, Award, Home, Target, AlertTriangle, BarChart3, Trophy } from "lucide-react";
 import { AptitudeTestResult } from "@/lib/aptitudeQuestions";
 
 interface QuizQuestion {
@@ -25,6 +25,7 @@ const AptitudeResult = () => {
   const navigate = useNavigate();
   const [result, setResult] = useState<TestResultData | null>(null);
   const [progress, setProgress] = useState(0);
+  const [percentile, setPercentile] = useState<number | null>(null);
 
   useEffect(() => {
     const savedResult = sessionStorage.getItem("aptitudeTestResult");
@@ -32,6 +33,10 @@ const AptitudeResult = () => {
     if (savedResult) {
       const parsedResult: TestResultData = JSON.parse(savedResult);
       setResult(parsedResult);
+
+      // Percentile saved alongside the result (when backend save succeeded)
+      const savedPercentile = sessionStorage.getItem("aptitudePercentile");
+      setPercentile(savedPercentile ? Number(savedPercentile) : null);
 
       setTimeout(() => {
         setProgress((parsedResult.score / parsedResult.totalQuestions) * 100);
@@ -137,6 +142,14 @@ const AptitudeResult = () => {
               {performanceLevel}
             </Badge>
             <p className="text-muted-foreground">You scored {percentage.toFixed(0)}%</p>
+            {percentile !== null && (
+              <div className="mt-3 inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/10 border border-primary/30 text-sm">
+                <Trophy className="w-4 h-4 text-primary" />
+                <span className="font-medium text-foreground">
+                  Better than {percentile}% of candidates on this topic
+                </span>
+              </div>
+            )}
           </div>
         </Card>
 
@@ -259,7 +272,7 @@ const AptitudeResult = () => {
             {result.questions?.map((question, index) => {
               const userAnswer = result.selectedAnswers.find(
                 (a) => String(a.questionId) === String(question._id)
-              ) as any;
+              );
 
               const wasAnswered = !!userAnswer;
               const isCorrect = userAnswer?.isCorrect || false;

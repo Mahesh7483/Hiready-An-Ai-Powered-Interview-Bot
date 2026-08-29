@@ -122,3 +122,28 @@ All colors MUST be HSL.
     @apply bg-background text-foreground;
   }
 }
+
+/* ── Print / Save-as-PDF optimization for the resume report ── */
+@media print {
+  .print-hide,
+  nav,
+  aside,
+  button {
+    display: none !important;
+  }
+  body {
+    background: white !important;
+  }
+  .p-6, .lg\:p-8 {
+    padding: 0 !important;
+  }
+  * {
+    box-shadow: none !important;
+    animation: none !important;
+    transition: none !important;
+  }
+  main, .min-h-screen {
+    margin: 0 !important;
+    padding-top: 0 !important;
+  }
+}

@@ -5,17 +5,25 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Mic, MicOff, X, Volume2, AlertCircle, SkipForward, BookOpen, Laptop, Clock, Users } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
+import { Mic, MicOff, X, Volume2, AlertCircle, SkipForward, BookOpen, Laptop, Clock, Users, Briefcase, MonitorSmartphone, ShieldAlert } from "lucide-react";
 import CandidateWebcamMonitor from "@/components/proctoring/CandidateWebcamMonitor";
 import { sendProctorLog, type ProctorEvent } from "@/lib/proctorLogger";
+import { captureWebcamSnapshot } from "@/lib/webcamSnap";
+import { saveInterviewSession } from "@/lib/historyApi";
+import { detectDevice } from "@/lib/deviceGuard";
+import { runAudioCheck, type AudioCheckResult } from "@/lib/audioCheck";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { deepgramService } from "@/lib/deepgram";
-import { llmService } from "@/lib/llm";
-import { 
-  checkBrowserCompatibility, 
-  validateApiKeys, 
-  getErrorMessage 
+import { llmService, type InterviewConfig } from "@/lib/llm";
+import {
+  checkBrowserCompatibility,
+  validateAIAvailability,
+  getErrorMessage
 } from "@/lib/voiceInterviewUtils";
 
 // ============================================================
@@ -26,6 +34,20 @@ const GuidelinesScreen: React.FC<{
   onBack: () => void;
 }> = ({ onStart, onBack }) => {
   const [agreedToTerms, setAgreedToTerms] = useState(false);
+  const [audioChecking, setAudioChecking] = useState(false);
+  const [audioCheckResult, setAudioCheckResult] = useState<{ rms: number; status: "quiet" | "moderate" | "noisy"; message: string } | null>(null);
+
+  const handleAudioCheck = async () => {
+    setAudioChecking(true);
+    try {
+      const result = await runAudioCheck();
+      setAudioCheckResult(result);
+    } catch {
+      toast.error("Could not access microphone");
+    } finally {
+      setAudioChecking(false);
+    }
+  };
 
   // Define instruction sections
   const instructionSections = [
@@ -44,11 +66,24 @@ const GuidelinesScreen: React.FC<{
       title: "Technical Requirements",
       icon: Laptop,
       items: [
+        "Use a desktop or laptop only — mobile phones and tablets are blocked",
         "Ensure your microphone is working and audio is clear",
         "Allow browser microphone permissions when prompted",
         "Use a well-lit environment with minimal background noise",
         "Close all unnecessary applications to avoid distractions",
         "Ensure stable WiFi or wired internet connection (minimum 5 Mbps)"
+      ]
+    },
+    {
+      title: "Strict Proctoring Rules — Zero Tolerance",
+      icon: ShieldAlert,
+      items: [
+        "The interview runs in fullscreen. Exiting fullscreen is a violation and you will be forced back in",
+        "Switching tabs, minimizing, or clicking another window is a violation",
+        "Copy, cut, paste, right-click, and developer tools are completely blocked",
+        "Your webcam is monitored throughout — keep your face visible at all times",
+        "3 violations = the interview is TERMINATED immediately and flagged in your report",
+        "All violations are logged with timestamps to your permanent interview record"
       ]
     }
   ];
@@ -150,6 +185,44 @@ const GuidelinesScreen: React.FC<{
             })}
           </div>
 
+          {/* Audio Environment Check */}
+          <div className="border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 rounded-lg p-5 mb-8 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-blue-600 rounded-lg">
+                <Mic className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Microphone & Environment Check</h3>
+                <p className="text-sm text-muted-foreground">Quick 3-second noise level test to ensure your audio is clear</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                variant="outline"
+                onClick={handleAudioCheck}
+                disabled={audioChecking}
+              >
+                <Mic className="mr-2 w-4 h-4" />
+                {audioChecking ? "Checking..." : "Run 3-Second Noise Check"}
+              </Button>
+              {audioCheckResult && (
+                <div className="flex-1 flex items-center gap-2">
+                  <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center"
+                    style={{ borderColor: audioCheckResult.status === "quiet" ? "hsl(var(--success))" : audioCheckResult.status === "moderate" ? "hsl(var(--warning))" : "hsl(var(--destructive))" }}>
+                    <div className="w-2.5 h-2.5 rounded-full"
+                      style={{ backgroundColor: audioCheckResult.status === "quiet" ? "hsl(var(--success))" : audioCheckResult.status === "moderate" ? "hsl(var(--warning))" : "hsl(var(--destructive))" }} />
+                  </div>
+                  <span className="text-sm font-medium">
+                    {audioCheckResult.status === "quiet" ? "Quiet ✓" : audioCheckResult.status === "moderate" ? "Moderate" : "Noisy"}
+                  </span>
+                </div>
+              )}
+            </div>
+            {audioCheckResult && (
+              <p className="text-xs text-muted-foreground">{audioCheckResult.message}</p>
+            )}
+          </div>
+
           {/* Agreement Checkbox */}
           <div className="border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg p-5 mb-8 space-y-4">
             <div className="flex items-start gap-3">
@@ -159,9 +232,9 @@ const GuidelinesScreen: React.FC<{
                 className="mt-1"
               />
               <label className="text-sm text-foreground cursor-pointer flex-1">
-                <span className="font-semibold">I agree to the instructions and understand the rules</span>
+                <span className="font-semibold">I agree to the instructions and understand that violations will terminate my interview</span>
                 <p className="text-xs text-muted-foreground mt-1">
-                  By checking this box, you confirm that you have read and understood all the instructions and agree to follow the interview rules.
+                  By checking this box, you confirm that you have read and understood all rules, including strict proctoring: 3 violations (tab switching, exiting fullscreen, clipboard use, etc.) will terminate the interview immediately.
                 </p>
               </label>
             </div>
@@ -198,17 +271,211 @@ const GuidelinesScreen: React.FC<{
 };
 
 // ============================================================
+// Interview Setup Screen — role-adaptive interview configuration
+// ============================================================
+const ROLE_SUGGESTIONS = [
+  "Frontend Developer",
+  "Backend Developer",
+  "Full Stack Developer",
+  "Data Analyst",
+  "Machine Learning Engineer",
+  "DevOps Engineer",
+  "Mobile Developer",
+  "QA Engineer",
+];
+
+  const EXPERIENCE_LEVELS = ["Fresher", "Intern", "Entry-Level", "Mid-Level", "Senior-Level"];
+
+const InterviewSetupScreen: React.FC<{
+  onContinue: (config: InterviewConfig) => void;
+}> = ({ onContinue }) => {
+  const [role, setRole] = useState("Frontend Developer");
+  const [experienceLevel, setExperienceLevel] = useState("Mid-Level");
+  const [jobDescription, setJobDescription] = useState("");
+  const [mode, setMode] = useState<"assessment" | "practice">("assessment");
+  const [interviewType, setInterviewType] = useState<"technical" | "behavioral">("technical");
+
+  const handleContinue = () => {
+    if (!role.trim()) {
+      toast.error("Please enter a target job role");
+      return;
+    }
+    onContinue({
+      role: role.trim().slice(0, 120),
+      experienceLevel,
+      jobDescription: jobDescription.trim() || undefined,
+      mode,
+      interviewType,
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5 flex items-center justify-center p-4">
+      <Card className="w-full max-w-2xl border border-border shadow-2xl animate-in slide-in-from-bottom-5 duration-500">
+        <div className="bg-gradient-to-r from-primary/10 to-transparent border-b border-border p-8">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-primary/10 rounded-lg">
+              <Briefcase className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Interview Setup</h1>
+              <p className="text-muted-foreground mt-1">
+                Tell us what you're interviewing for — the AI interviewer tailors every question to it
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-8 space-y-6">
+          <div className="space-y-2">
+            <Label htmlFor="job-role">Target Role</Label>
+            <Input
+              id="job-role"
+              placeholder="e.g. React Developer"
+              value={role}
+              onChange={(e) => setRole(e.target.value)}
+              maxLength={120}
+            />
+            <div className="flex flex-wrap gap-2 pt-1">
+              {ROLE_SUGGESTIONS.map((suggestion) => (
+                <button
+                  key={suggestion}
+                  type="button"
+                  onClick={() => setRole(suggestion)}
+                  className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                    role === suggestion
+                      ? "border-primary bg-primary/10 text-primary font-medium"
+                      : "border-border text-muted-foreground hover:text-foreground hover:border-primary/50"
+                  }`}
+                >
+                  {suggestion}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Experience Level</Label>
+            <Select value={experienceLevel} onValueChange={setExperienceLevel}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select experience level" />
+              </SelectTrigger>
+              <SelectContent>
+                {EXPERIENCE_LEVELS.map((level) => (
+                  <SelectItem key={level} value={level}>
+                    {level}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Interview Round</Label>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                { id: "technical", title: "Technical", desc: "Skills depth, problem-solving + one behavioral", icon: Briefcase, color: "primary" },
+                { id: "behavioral", title: "HR Behavioral", desc: "STAR stories, culture fit, motivation — no technical", icon: Users, color: "accent" },
+              ] as const).map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setInterviewType(t.id)}
+                  className={`p-4 rounded-lg border-2 text-left transition-colors ${
+                    interviewType === t.id
+                      ? t.color === "primary" ? "border-primary bg-primary/5" : "border-accent bg-accent/5"
+                      : "border-border hover:border-primary/40"
+                  }`}
+                >
+                  <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <t.icon className={`w-4 h-4 ${t.color === "primary" ? "text-primary" : "text-accent"}`} /> {t.title}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">{t.desc}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Interview Mode</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setMode("assessment")}
+                className={`p-4 rounded-lg border-2 text-left transition-colors ${
+                  mode === "assessment"
+                    ? "border-destructive/60 bg-destructive/5"
+                    : "border-border hover:border-destructive/40"
+                }`}
+              >
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-destructive" /> Assessment
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Strict proctoring. 3 violations = terminated. No copy/paste.
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("practice")}
+                className={`p-4 rounded-lg border-2 text-left transition-colors ${
+                  mode === "practice"
+                    ? "border-success/60 bg-success/5"
+                    : "border-border hover:border-success/40"
+                }`}
+              >
+                <p className="text-sm font-semibold text-foreground flex items-center gap-2">
+                  <BookOpen className="w-4 h-4 text-success" /> Practice
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Relaxed rules. Violations logged but never terminate the session.
+                </p>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="jd">
+              Job Description <span className="text-muted-foreground text-xs">(optional)</span>
+            </Label>
+            <Textarea
+              id="jd"
+              placeholder="Paste the job description to focus questions on the exact requirements..."
+              value={jobDescription}
+              onChange={(e) => setJobDescription(e.target.value.slice(0, 2000))}
+              rows={5}
+            />
+            <p className="text-xs text-muted-foreground text-right">
+              {jobDescription.length}/2000
+            </p>
+          </div>
+
+          <Button onClick={handleContinue} className="w-full bg-gradient-primary hover:opacity-90">
+            Continue to Instructions
+          </Button>
+        </div>
+      </Card>
+    </div>
+  );
+};
+
+// ============================================================
 // Voice Interview Content Component
 // ============================================================
 const VoiceInterviewContent = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
+  const [phase, setPhase] = useState<"setup" | "guidelines" | "interview">("setup");
+
   const [isRecording, setIsRecording] = useState(false);
   const [isAISpeaking, setIsAISpeaking] = useState(false);
   const [caption, setCaption] = useState("");
   const [questionIndex, setQuestionIndex] = useState(0);
   const [jobRole, setJobRole] = useState("Frontend Developer");
   const [experienceLevel, setExperienceLevel] = useState("Mid-Level");
+  const [interviewMode, setInterviewMode] = useState<"assessment" | "practice">("assessment");
+  const [interviewType, setInterviewType] = useState<"technical" | "behavioral">("technical");
+  const [voiceRate, setVoiceRate] = useState(0.9);
   const [userTranscript, setUserTranscript] = useState("");
   const [isProcessing, setIsProcessing] = useState(false);
   const [interimTranscript, setInterimTranscript] = useState("");
@@ -218,7 +485,60 @@ const VoiceInterviewContent = () => {
   const recordingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isRecordingRef = useRef(false);
   const sessionIdRef = useRef(`interview_${Date.now()}`);
+  // Pause grace period state: lets candidates think mid-answer without being cut off
+  const [pauseCountdown, setPauseCountdown] = useState<number | null>(null);
+  const pauseTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const pauseRemainingRef = useRef(0);
   const proctorLogsRef = useRef<ProctorEvent[]>([]);
+  const sessionStartRef = useRef<number>(Date.now());
+
+  // ── Delivery metrics: captured per answer (duration, WPM, fillers) ──
+  const answerStartRef = useRef<number | null>(null);
+  const answerMetricsRef = useRef<
+    Array<{ durationSec: number; words: number; wpm: number; fillers: number }>
+  >([]);
+
+  const FILLER_RE = /\b(um+|uh+|erm|like|you know|i mean|basically|actually|sort of|kind of)\b/gi;
+
+  const captureAnswerMetric = (transcript: string) => {
+    if (!answerStartRef.current) return;
+    const durationSec = Math.max(1, Math.round((Date.now() - answerStartRef.current) / 1000));
+    const words = transcript.trim().split(/\s+/).filter(Boolean).length;
+    const fillers = (transcript.match(FILLER_RE) || []).length;
+    answerMetricsRef.current.push({
+      durationSec,
+      words,
+      wpm: Math.round((words / Math.max(durationSec, 1)) * 60),
+      fillers,
+    });
+    answerStartRef.current = null;
+  };
+
+  // ── Strict proctoring: violation tracking (3 violations = terminated) ──
+  const MAX_VIOLATIONS = 3;
+  const [violationCount, setViolationCount] = useState(0);
+  const violationCountRef = useRef(0);
+  const endedByViolationsRef = useRef(false);
+
+  const registerViolation = (type: string, message: string) => {
+    logProctorEvent(type);
+    violationCountRef.current += 1;
+    const count = violationCountRef.current;
+    setViolationCount(count);
+
+    if (count >= MAX_VIOLATIONS) {
+      endedByViolationsRef.current = true;
+      toast.error(`Interview TERMINATED — ${MAX_VIOLATIONS} proctoring violations recorded.`, {
+        duration: 8000,
+      });
+      // Give the toast a beat to render before tearing down
+      setTimeout(() => handleEndInterview(), 800);
+      return;
+    }
+    toast.warning(`${message} Violation ${count} of ${MAX_VIOLATIONS}. At ${MAX_VIOLATIONS} the interview is auto-terminated.`, {
+      duration: 7000,
+    });
+  };
 
   // Get user initials for avatar fallback
   const getInitials = (displayName: string | null) => {
@@ -245,8 +565,9 @@ const VoiceInterviewContent = () => {
     return "Candidate";
   };
 
-  // Enter fullscreen on mount, exit on unmount
+  // Fullscreen only during assessment-mode interviews; exit on unmount
   useEffect(() => {
+    if (phase !== "interview" || interviewMode !== "assessment") return;
     const enterFullscreen = async () => {
       try {
         if (document.documentElement.requestFullscreen) {
@@ -263,86 +584,177 @@ const VoiceInterviewContent = () => {
         document.exitFullscreen().catch(() => {});
       }
     };
-  }, []);
+  }, [phase, interviewMode]);
 
-  // Helper to log a proctor event locally + send to backend
+  // ── Session timer (live interview only) ──
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  useEffect(() => {
+    if (phase !== "interview") return;
+    const start = sessionStartRef.current;
+    const tick = () => setElapsedSeconds(Math.round((Date.now() - start) / 1000));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [phase]);
+
+  // Helper to log a proctor event locally + send to backend (with webcam evidence)
   const logProctorEvent = (eventName: string) => {
+    const snapshot = captureWebcamSnapshot();
     const event: ProctorEvent = {
       event: eventName,
       timestamp: new Date().toISOString(),
       sessionId: sessionIdRef.current,
+      ...(snapshot ? { snapshot } : {}),
     };
     proctorLogsRef.current = [...proctorLogsRef.current, event];
     sendProctorLog(event);
   };
 
-  // Detect tab switch (visibility change)
+  // ── Proctoring listeners: strict in assessment mode, warn-only in practice ──
   useEffect(() => {
+    if (phase !== "interview") return;
+    const isPractice = interviewMode === "practice";
+
+    const softWarn = (type: string, message: string) => {
+      if (isPractice) {
+        logProctorEvent(type);
+        toast.info(`${message} (logged — practice mode)`, { duration: 3000 });
+      } else {
+        registerViolation(type, message);
+      }
+    };
+
+    // Tab switch / window minimized
     const handleVisibilityChange = () => {
       if (document.hidden) {
-        toast.warning("Warning: Tab switch detected! This activity has been logged.", {
-          duration: 5000,
-        });
-        logProctorEvent("tab_switch_detected");
+        softWarn("tab_switch_detected", "Tab switch detected!");
+      }
+    };
+
+    // Fullscreen exit
+    const handleFullscreenChange = () => {
+      if (!document.fullscreenElement && !isPractice) {
+        registerViolation(
+          "fullscreen_exit_detected",
+          "Fullscreen mode exited! Re-entering fullscreen."
+        );
+        // Force back into fullscreen immediately
+        document.documentElement.requestFullscreen?.().catch(() => {});
+      }
+    };
+
+    // Clicking into another window/monitor
+    const handleWindowBlur = () => {
+      softWarn("window_blur_detected", "You left the interview window!");
+    };
+
+    // Copy / cut / paste blocked (assessment only)
+    const blockClipboard = (e: Event) => {
+      e.preventDefault();
+      registerViolation("clipboard_blocked", `${e.type.charAt(0).toUpperCase()}${e.type.slice(1)} is not allowed during the interview.`);
+    };
+
+    // Right-click blocked (assessment only)
+    const blockContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+      registerViolation("right_click_blocked", "Right-click is disabled during the interview.");
+    };
+
+    // DevTools / view-source shortcuts blocked (assessment only)
+    const blockShortcuts = (e: KeyboardEvent) => {
+      const isDevTools =
+        e.key === "F12" ||
+        ((e.ctrlKey || e.metaKey) && e.shiftKey && ["I", "J", "C"].includes(e.key.toUpperCase())) ||
+        ((e.ctrlKey || e.metaKey) && e.key.toUpperCase() === "U");
+      if (isDevTools) {
+        e.preventDefault();
+        registerViolation("devtools_shortcut_blocked", "Developer tools shortcuts are blocked.");
       }
     };
 
     document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("fullscreenchange", handleFullscreenChange);
+    window.addEventListener("blur", handleWindowBlur);
+
+    if (!isPractice) {
+      document.addEventListener("copy", blockClipboard);
+      document.addEventListener("cut", blockClipboard);
+      document.addEventListener("paste", blockClipboard);
+      document.addEventListener("contextmenu", blockContextMenu);
+      document.addEventListener("keydown", blockShortcuts);
+    }
+
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, []);
-
-  // Detect fullscreen exit (user pressed Escape or exited fullscreen)
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      // Only warn if fullscreen was exited while the component is still mounted
-      if (!document.fullscreenElement) {
-        toast.warning("Warning: Fullscreen mode exited! This activity has been logged.", {
-          duration: 5000,
-        });
-        logProctorEvent("fullscreen_exit_detected");
-      }
-    };
-
-    document.addEventListener("fullscreenchange", handleFullscreenChange);
-    return () => {
       document.removeEventListener("fullscreenchange", handleFullscreenChange);
+      window.removeEventListener("blur", handleWindowBlur);
+      document.removeEventListener("copy", blockClipboard);
+      document.removeEventListener("cut", blockClipboard);
+      document.removeEventListener("paste", blockClipboard);
+      document.removeEventListener("contextmenu", blockContextMenu);
+      document.removeEventListener("keydown", blockShortcuts);
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- registerViolation only touches refs and stable setters; re-arming listeners on its identity change is not needed
+  }, [phase, interviewMode]);
+
+  // Configure the AI interviewer and move to the guidelines screen
+  const handleSetupContinue = (config: InterviewConfig) => {
+    setJobRole(config.role);
+    setExperienceLevel(config.experienceLevel);
+    setInterviewMode(config.mode ?? "assessment");
+    setInterviewType(config.interviewType ?? "technical");
+    llmService.configure(config);
+    sessionStorage.setItem("interviewConfig", JSON.stringify(config));
+    setPhase("guidelines");
+  };
 
   useEffect(() => {
-    // Check browser compatibility and API keys
+    if (phase !== "interview") return;
+
+    // Mark when the live interview started (for duration stats)
+    sessionStartRef.current = Date.now();
+
+    // Check browser compatibility and backend AI availability
     const compatibility = checkBrowserCompatibility();
     if (!compatibility.isCompatible) {
       toast.error(`Browser not supported. Missing: ${compatibility.missingFeatures.join(", ")}`);
       return;
     }
 
-    const apiValidation = validateApiKeys();
-    if (!apiValidation.isValid) {
-      toast.error(`Missing API keys: ${apiValidation.missingKeys.join(", ")}`);
-      setCaption("⚠️ API keys not configured. Please check .env file and restart the server.");
-      return;
-    }
+    let cancelled = false;
+    validateAIAvailability().then((apiValidation) => {
+      if (cancelled) return;
+      if (!apiValidation.isValid) {
+        toast.error(`${apiValidation.missingKeys[0] || "AI services unavailable"}`);
+        setCaption("⚠️ AI services are unavailable. Please check that the backend is running.");
+        return;
+      }
 
-    // Start interview with initial question from LLM
-    startInterview();
+      // Start interview with initial question from LLM
+      startInterview();
+    });
 
     return () => {
+      cancelled = true;
       // Cleanup on unmount
       if (deepgramService.isRecording()) {
         deepgramService.stopLiveTranscription();
       }
       if (recordingTimeoutRef.current) {
+        // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally clearing the latest pending timeout set by startInterview during the effect lifetime
         clearTimeout(recordingTimeoutRef.current);
+      }
+      if (pauseTimerRef.current) {
+        clearInterval(pauseTimerRef.current);
+        pauseTimerRef.current = null;
       }
       // Stop speech synthesis
       if ('speechSynthesis' in window) {
         window.speechSynthesis.cancel();
       }
     };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: interview must start exactly once when phase becomes "interview"; adding startInterview would restart it on every render
+  }, [phase]);
 
   /**
    * Start the interview by getting initial question from LLM
@@ -383,12 +795,12 @@ const VoiceInterviewContent = () => {
   };
 
   /**
-   * Text-to-Speech using Web Speech API
+   * Text-to-Speech using Web Speech API (rate from voice settings)
    */
   const speakText = (text: string) => {
     if ('speechSynthesis' in window) {
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
+      utterance.rate = voiceRate;
       utterance.pitch = 1;
       utterance.volume = 1;
       window.speechSynthesis.speak(utterance);
@@ -407,12 +819,44 @@ const VoiceInterviewContent = () => {
   };
 
   /**
+   * Pause grace period: when Deepgram reports UtteranceEnd, don't cut the
+   * candidate off mid-answer — start a visible countdown instead. If they
+   * resume speaking (any new transcript), the countdown cancels automatically.
+   */
+  const cancelPauseCountdown = () => {
+    if (pauseTimerRef.current) {
+      clearInterval(pauseTimerRef.current);
+      pauseTimerRef.current = null;
+    }
+    pauseRemainingRef.current = 0;
+    setPauseCountdown(null);
+  };
+
+  const beginPauseCountdown = () => {
+    if (pauseTimerRef.current) return; // already counting down
+    pauseRemainingRef.current = 4;
+    setPauseCountdown(4);
+    pauseTimerRef.current = setInterval(() => {
+      pauseRemainingRef.current -= 1;
+      setPauseCountdown(pauseRemainingRef.current);
+      if (pauseRemainingRef.current <= 0) {
+        if (pauseTimerRef.current) {
+          clearInterval(pauseTimerRef.current);
+          pauseTimerRef.current = null;
+        }
+        stopRecording();
+      }
+    }, 1000);
+  };
+
+  /**
    * Start recording user's audio with Deepgram
    */
   const startRecording = async () => {
     try {
       setIsRecording(true);
       isRecordingRef.current = true;
+      answerStartRef.current = Date.now();
       setCaption("🎤 Listening to your response...");
       setUserTranscript("");
       setInterimTranscript("");
@@ -422,6 +866,8 @@ const VoiceInterviewContent = () => {
       // Start Deepgram live transcription
       await deepgramService.startLiveTranscription(
         (transcript: string, isFinal: boolean) => {
+          // User resumed speaking — cancel any pending pause countdown
+          cancelPauseCountdown();
           if (isFinal) {
             // Accumulate final transcripts (complete sentences)
             const currentText = transcriptBufferRef.current;
@@ -433,11 +879,10 @@ const VoiceInterviewContent = () => {
           }
         },
         () => {
-          // Utterance end detected - user stopped speaking
-          console.log("Utterance ended, stopping recording...");
+          // Utterance end detected — start a grace countdown instead of cutting
+          // the candidate off. Resuming speech cancels it (see onTranscript).
           if (isRecordingRef.current && transcriptBufferRef.current.trim()) {
-            // Only auto-stop if we have captured some text
-            stopRecording();
+            beginPauseCountdown();
           }
         },
         (error: Error) => {
@@ -463,14 +908,16 @@ const VoiceInterviewContent = () => {
     if (recordingTimeoutRef.current) {
       clearTimeout(recordingTimeoutRef.current);
     }
+    cancelPauseCountdown();
 
     setIsRecording(false);
     isRecordingRef.current = false;
     deepgramService.stopLiveTranscription();
     
     const finalTranscript = transcriptBufferRef.current.trim();
-    
+
     if (finalTranscript) {
+      captureAnswerMetric(finalTranscript);
       setUserTranscript(finalTranscript);
       setCaption("✅ Recording stopped. Processing your answer...");
       toast.success("Recording stopped");
@@ -547,10 +994,91 @@ const VoiceInterviewContent = () => {
     // Save conversation log to session storage for the report page
     sessionStorage.setItem('interviewConversation', JSON.stringify(conversationLog));
     sessionStorage.setItem('proctorLogs', JSON.stringify(proctorLogsRef.current));
+    sessionStorage.setItem(
+      'interviewIntegrity',
+      JSON.stringify({
+        violations: violationCountRef.current,
+        maxViolations: MAX_VIOLATIONS,
+        terminated: endedByViolationsRef.current || violationCountRef.current >= MAX_VIOLATIONS,
+      })
+    );
+
+    // Persist the session to the user's history (non-blocking)
+    const durationSeconds = Math.round((Date.now() - sessionStartRef.current) / 1000);
+
+    // Aggregate delivery metrics
+    const answers = answerMetricsRef.current;
+    const totals = answers.reduce(
+      (acc, a) => ({
+        words: acc.words + a.words,
+        fillers: acc.fillers + a.fillers,
+        speakingSec: acc.speakingSec + a.durationSec,
+      }),
+      { words: 0, fillers: 0, speakingSec: 0 }
+    );
+    const metricsJson = {
+      answers,
+      totals: {
+        ...totals,
+        avgWpm: totals.speakingSec > 0 ? Math.round((totals.words / totals.speakingSec) * 60) : 0,
+      },
+    };
+    sessionStorage.setItem('interviewMetrics', JSON.stringify(metricsJson));
+
+    saveInterviewSession({
+      sessionId: sessionIdRef.current,
+      role: jobRole,
+      experienceLevel,
+      mode: interviewMode,
+      durationSeconds,
+      metricsJson,
+      interviewType,
+      conversationLog: conversationLog.map((m) => ({
+        role: m.role === "user" ? "user" : "interviewer",
+        text: m.text,
+      })),
+      integrity: {
+        violations: violationCountRef.current,
+        maxViolations: MAX_VIOLATIONS,
+        terminated:
+          endedByViolationsRef.current || violationCountRef.current >= MAX_VIOLATIONS,
+      },
+    }).then((id) => {
+      if (id) sessionStorage.setItem('interviewSessionId', id);
+    });
 
     toast.success("Interview ended");
     navigate("/interview-report");
   };
+
+  // ── Round structure: maps question index to the strict prompt's plan ──
+  const getRoundInfo = (qIndex: number): { label: string; round: number } => {
+    const isBehavioral = interviewType === "behavioral";
+    if (isBehavioral) {
+      if (qIndex === 0) return { label: "Round 1 · Background & Motivation", round: 1 };
+      if (qIndex <= 4) return { label: `Round ${qIndex + 1} · Behavioral (STAR)`, round: qIndex + 1 };
+      return { label: "Final · Wrap-up", round: 6 };
+    }
+    if (qIndex <= 1) return { label: "Round 1 · Background", round: 1 };
+    if (qIndex === 2) return { label: "Round 2 · Technical Depth", round: 2 };
+    if (qIndex === 3) return { label: "Round 3 · Problem Solving", round: 3 };
+    if (qIndex === 4) return { label: "Round 4 · Behavioral", round: 4 };
+    return { label: "Final · Wrap-up", round: 5 };
+  };
+
+  // Phase-based rendering: setup → guidelines → live interview
+  if (phase === "setup") {
+    return <InterviewSetupScreen onContinue={handleSetupContinue} />;
+  }
+
+  if (phase === "guidelines") {
+    return (
+      <GuidelinesScreen
+        onStart={() => setPhase("interview")}
+        onBack={() => setPhase("setup")}
+      />
+    );
+  }
 
   return (
     <div className="fixed inset-0 z-50 bg-background overflow-y-auto">
@@ -565,20 +1093,56 @@ const VoiceInterviewContent = () => {
               <div>
                 <h2 className="text-lg font-semibold text-foreground">{jobRole} Interview</h2>
                 <Badge variant="outline" className="text-xs">
-                  <div className="w-2 h-2 rounded-full bg-success mr-1.5 animate-pulse" />
-                  Technical Interview
+                  <div className={`w-2 h-2 rounded-full mr-1.5 animate-pulse ${interviewMode === "assessment" ? "bg-success" : "bg-primary"}`} />
+                  {interviewMode === "assessment" ? "Technical Interview" : "Practice Session"}
                 </Badge>
               </div>
             </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleEndInterview}
-              className="text-destructive hover:text-destructive"
-            >
-              <X className="w-4 h-4 mr-1" />
-              Leave Interview
-            </Button>
+            <div className="flex items-center gap-3">
+              {/* Voice speed control */}
+              <Select
+                value={String(voiceRate)}
+                onValueChange={(v) => setVoiceRate(parseFloat(v))}
+              >
+                <SelectTrigger className="h-8 w-[110px] text-xs">
+                  <Volume2 className="w-3.5 h-3.5 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="0.7">Slow 0.7x</SelectItem>
+                  <SelectItem value="0.9">Normal 0.9x</SelectItem>
+                  <SelectItem value="1.1">Fast 1.1x</SelectItem>
+                </SelectContent>
+              </Select>
+              {/* Session timer */}
+              <span className="hidden sm:inline text-xs text-muted-foreground font-mono tabular-nums px-2 py-1 rounded bg-muted/50 border border-border">
+                {String(Math.floor(elapsedSeconds / 60)).padStart(2, "0")}:
+                {String(elapsedSeconds % 60).padStart(2, "0")}
+              </span>
+              {/* Strict proctoring violation counter */}
+              <div
+                className={`hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-xs font-semibold ${
+                  violationCount === 0
+                    ? "border-border text-muted-foreground"
+                    : violationCount === 1
+                    ? "border-warning/50 bg-warning/10 text-warning"
+                    : "border-destructive/50 bg-destructive/10 text-destructive animate-pulse"
+                }`}
+                title="Proctoring violations — the interview auto-terminates at 3"
+              >
+                <ShieldAlert className="w-4 h-4" />
+                Violations: {violationCount}/{MAX_VIOLATIONS}
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={handleEndInterview}
+                className="text-destructive hover:text-destructive"
+              >
+                <X className="w-4 h-4 mr-1" />
+                Leave Interview
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -724,6 +1288,18 @@ const VoiceInterviewContent = () => {
                 🎤 Recording... (Speak now)
               </p>
             )}
+            {isRecording && pauseCountdown !== null && (
+              <div className="flex flex-col items-center gap-2 p-3 rounded-lg border border-amber-500/40 bg-amber-500/10">
+                <p className="text-sm text-amber-600 dark:text-amber-400 font-medium text-center">
+                  ⏸️ Pause detected — still listening. Auto-submitting in {pauseCountdown}s.
+                  <br />
+                  Just keep talking to continue your answer.
+                </p>
+                <Button variant="outline" size="sm" onClick={cancelPauseCountdown}>
+                  Keep talking
+                </Button>
+              </div>
+            )}
             {isProcessing && (
               <p className="text-sm text-primary font-medium animate-pulse">
                 ⏳ Processing your response...
@@ -747,6 +1323,9 @@ const VoiceInterviewContent = () => {
                 />
               ))}
             </div>
+            <p className="text-xs font-medium text-primary">
+              {getRoundInfo(questionIndex).label}
+            </p>
             <p className="text-xs text-muted-foreground">
               Question {questionIndex + 1} of interview
             </p>
@@ -762,9 +1341,33 @@ const VoiceInterviewContent = () => {
 // Main Voice Interview Page Component
 // ============================================================
 const VoiceInterview = () => {
-  return (
-    <VoiceInterviewContent />
-  );
+  // ── Device guard: interviews are desktop-only ──
+  const deviceCheck = detectDevice();
+  if (!deviceCheck.allowed) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-destructive/5 flex items-center justify-center p-4">
+        <Card className="w-full max-w-lg border-2 border-destructive/40 shadow-2xl p-8 text-center space-y-4">
+          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
+            <MonitorSmartphone className="w-8 h-8 text-destructive" />
+          </div>
+          <h1 className="text-2xl font-bold text-foreground">Desktop Required</h1>
+          <p className="text-sm font-medium text-destructive uppercase tracking-wide">
+            Detected device: {deviceCheck.deviceType}
+          </p>
+          <p className="text-sm text-muted-foreground leading-relaxed">{deviceCheck.reason}</p>
+          <ul className="text-xs text-muted-foreground text-left list-disc pl-6 space-y-1">
+            <li>Fullscreen lock and tab-switch detection</li>
+            <li>Live webcam proctoring with face detection</li>
+            <li>Copy/paste and right-click blocking</li>
+          </ul>
+          <p className="text-xs text-muted-foreground pt-2 border-t border-border">
+            Please switch to a laptop or desktop computer to take the interview.
+          </p>
+        </Card>
+      </div>
+    );
+  }
+  return <VoiceInterviewContent />;
 };
 
 export default VoiceInterview;

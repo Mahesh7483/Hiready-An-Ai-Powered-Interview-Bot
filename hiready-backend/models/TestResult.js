@@ -33,11 +33,24 @@ const testResultSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  negativeMarking: {
+    type: Boolean,
+    default: false
+  },
+  preset: {
+    type: String,
+    default: '',
+    maxlength: 60
+  },
   selectedAnswers: [{
     questionId: String,
     selected: String,
     correctAnswer: String,
-    isCorrect: Boolean
+    isCorrect: Boolean,
+    timeSpentMs: {
+      type: Number,
+      default: null
+    }
   }],
   createdAt: {
     type: Date,
