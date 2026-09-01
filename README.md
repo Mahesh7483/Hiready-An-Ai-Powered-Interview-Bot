@@ -83,13 +83,17 @@ and defaults to the opt-in, which is acceptable for local self-hosting only.
 
 ## Testing
 
-There is no automated test suite yet. CI runs lint, typecheck, frontend build,
-backend syntax checks, and a no-DB boot smoke test. When contributing, run:
+Run unit tests and verification across backend and frontend:
 
 ```sh
+cd hiready-backend && npm test
 cd hiready-frontend && npm run lint && npm run typecheck && npm run build
-cd hiready-backend && node --check server.js
 ```
+
+## 👥 Contributors
+
+- **Mahi / Mahesh** ([@1at23cs079-Mahi](https://github.com/1at23cs079-Mahi)) — Lead Architect, Security Hardening, Proctoring ML Engine, and Full-Stack Engineering.
+- **Prajwal** ([@Prajwal-SM-2005](https://github.com/Prajwal-SM-2005)) — Project Collaboration & Platform Design.
 
 ## Security notes
 
@@ -98,3 +102,4 @@ cd hiready-backend && node --check server.js
 - Rotate `JWT_SECRET` and API keys if they were ever used outside local development.
 - Admin access is re-checked against the database on every admin request; all
   admin and user-data routes are authenticated and ownership-scoped.
+

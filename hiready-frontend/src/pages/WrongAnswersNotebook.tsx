@@ -264,7 +264,7 @@ const WrongAnswersNotebook = () => {
                           <span className="w-6 h-6 rounded-full bg-background border border-border flex items-center justify-center text-xs font-semibold shrink-0">
                             {letter}
                           </span>
-                          <span className="min-w-0 truncate">{item[`Option ${letter}` as const]}</span>
+                          < span className="min-w-0 truncate">{item[`Option ${letter}` as keyof typeof item]}</span>
                           {showState && <CheckCircle2 className="w-4 h-4 text-success ml-auto shrink-0" />}
                         </div>
                       );

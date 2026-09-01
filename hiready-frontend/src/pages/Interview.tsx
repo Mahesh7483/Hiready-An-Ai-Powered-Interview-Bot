@@ -4,17 +4,10 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Mic, MicOff, Volume2, VolumeX, MessageSquare, CheckCircle, Clock, Users, AlertCircle, Laptop, BookOpen } from "lucide-react";
+import { Mic, MicOff, Clock, Users, Laptop, BookOpen, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-
-interface Message {
-  role: "ai" | "user";
-  content: string;
-  timestamp: Date;
-}
 
 // ============================================================
 // Guidelines Screen Component - Professional Instruction Page

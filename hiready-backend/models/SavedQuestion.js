@@ -4,7 +4,8 @@ const mongoose = require('mongoose');
 // later from the notebook. One save per user per question.
 const savedQuestionSchema = new mongoose.Schema({
   userId: {
-    type: String,
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
     required: true,
     index: true
   },

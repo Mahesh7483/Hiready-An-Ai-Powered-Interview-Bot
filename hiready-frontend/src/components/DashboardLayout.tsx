@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { GraduationCap, LayoutDashboard, FileText, MessageSquare, Brain, LogOut, Menu, X, TerminalSquare, ClipboardList } from "lucide-react";
+import { GraduationCap, LayoutDashboard, FileText, MessageSquare, Brain, LogOut, Menu, X, TerminalSquare, ClipboardList, History, BarChart3, NotebookPen, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
@@ -49,6 +49,15 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
     { path: "/aptitude", label: "Aptitude", icon: Brain },
   ];
 
+  // Secondary group: records & stats pages, one click away
+  const recordNavItems = [
+    { path: "/my-resumes", label: "My Resumes", icon: FileText },
+    { path: "/interview-history", label: "Interview History", icon: History },
+    { path: "/aptitude/dashboard", label: "Aptitude Stats", icon: BarChart3 },
+    { path: "/aptitude/notebook", label: "Wrong Answers", icon: NotebookPen },
+    { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
+  ];
+
   const isActive = (path: string) =>
     location.pathname === path || location.pathname.startsWith(path + "/");
 
@@ -77,7 +86,7 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
           <aside
             className={`fixed top-0 left-0 h-full bg-sidebar border-r border-sidebar-border z-40 transition-transform duration-300 ${
               isSidebarOpen ? "translate-x-0" : "-translate-x-full"
-            } lg:translate-x-0 w-64`}
+            } lg:translate-x-0 w-64 flex flex-col`}
           >
             {/* Logo */}
             <div className="p-6 border-b border-sidebar-border">
@@ -92,28 +101,58 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
               </div>
             </div>
 
-            {/* Navigation */}
-            <nav className="p-4 space-y-2">
-              {navItems.map((item) => {
-                const Icon = item.icon;
-                const active = isActive(item.path);
-                return (
-                  <Link
-                    key={item.path}
-                    to={item.path}
-                    onClick={() => setIsSidebarOpen(false)}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                      active
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        : "text-sidebar-foreground hover:bg-sidebar-accent/50"
-                    }`}
-                  >
-                    <Icon className="w-5 h-5" />
-                    <span>{item.label}</span>
-                  </Link>
-                );
-              })}
-            </nav>
+            {/* Navigation (scrollable so it never hides the profile on short screens) */}
+            <div className="flex-1 overflow-y-auto pb-28">
+              <nav className="p-4 space-y-2">
+                {navItems.map((item) => {
+                  const Icon = item.icon;
+                  const active = isActive(item.path);
+                  return (
+                    <Link
+                      key={item.path}
+                      to={item.path}
+                      onClick={() => setIsSidebarOpen(false)}
+                      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                        active
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                          : "text-sidebar-foreground hover:bg-sidebar-accent/50"
+                      }`}
+                    >
+                      <Icon className="w-5 h-5" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+
+              {/* My Records */}
+              <div className="px-4 pt-2">
+                <p className="px-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  My Records
+                </p>
+                <nav className="space-y-1">
+                  {recordNavItems.map((item) => {
+                    const Icon = item.icon;
+                    const active = isActive(item.path);
+                    return (
+                      <Link
+                        key={item.path}
+                        to={item.path}
+                        onClick={() => setIsSidebarOpen(false)}
+                        className={`flex items-center gap-3 px-4 py-2 rounded-lg text-sm transition-colors ${
+                          active
+                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                        }`}
+                      >
+                        <Icon className="w-4 h-4" />
+                        <span>{item.label}</span>
+                      </Link>
+                    );
+                  })}
+                </nav>
+              </div>
+            </div>
 
             {/* User Profile */}
             <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-sidebar-border">

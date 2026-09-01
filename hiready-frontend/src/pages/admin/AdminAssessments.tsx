@@ -66,8 +66,8 @@ const AdminAssessments = () => {
     setSections((s) => s.map((sec, idx) => (idx === i ? { ...sec, ...patch } : sec)));
   };
 
-  const createTemplate = async () => {
-    if (!title.trim()) return toast.error("Title is required");
+  const createTemplate = async (): Promise<void> => {
+    if (!title.trim()) { toast.error("Title is required"); return; }
     const cleanSections = sections.map((s) => ({
       type: s.type,
       title: s.title.trim() || s.type,

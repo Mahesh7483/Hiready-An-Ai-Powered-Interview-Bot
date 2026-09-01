@@ -8,12 +8,14 @@ import {
   Video,
   ArrowLeft,
   Layers,
+  Code,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
   { to: "/admin/users", label: "Users", icon: UsersIcon, end: false },
   { to: "/admin/questions", label: "Question Bank", icon: BookOpen, end: false },
+  { to: "/admin/coding-questions", label: "Coding Bank", icon: Code, end: false },
   { to: "/admin/results", label: "Test Results", icon: ClipboardList, end: false },
   { to: "/admin/interviews", label: "Interviews", icon: Video, end: false },
   { to: "/admin/proctoring", label: "Proctoring", icon: ShieldAlert, end: false },

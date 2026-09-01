@@ -23,15 +23,13 @@ services:
       JWT_SECRET: ${JWT_SECRET:?Set JWT_SECRET in your shell or .env file}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:8080}
       GROQ_API_KEY: ${GROQ_API_KEY:-}
-      GROQ_MODEL: ${GROQ_MODEL:-}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY:-}
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
       ADMIN_EMAILS: ${ADMIN_EMAILS:-}
-      # Self-hosted compose runs inside a container; unsandboxed code execution
-      # is limited to that container. Set to 0 and install nsjail for public deploys.
-      ALLOW_UNSAFE_SANDBOX: ${ALLOW_UNSAFE_SANDBOX:-1}
-    ports:
-      - "5000:5000"
+      # Set to 1 only for local development where nsjail is unavailable
+      ALLOW_UNSAFE_SANDBOX: ${ALLOW_UNSAFE_SANDBOX:-0}
+    # Internal port 5000 is accessible to frontend container via Docker network
 
   frontend:
     build:

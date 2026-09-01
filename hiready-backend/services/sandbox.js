@@ -5,132 +5,217 @@ const os = require('os');
 const crypto = require('crypto');
 
 const IS_WINDOWS = process.platform === 'win32';
-const MAX_OUTPUT_CHARS = 512 * 1024; // 512KB output cap per stream
-const MAX_CONCURRENT = 4;            // max simultaneous executions (host protection)
+const MAX_OUTPUT_CHARS = 512 * 1024;
+const MAX_CONCURRENT = 4;
+const MAX_QUEUE = 100;
 
-// ── Environment isolation ────────────────────────────────────────────────────
-// Spawned executions receive a MINIMAL environment. The server's real env is
-// never passed through: user-submitted code could otherwise read secrets
-// (JWT_SECRET, GROQ_API_KEY, DEEPGRAM_API_KEY, MONGO_URI) straight from
-// process.env / os.environ.
 function buildSandboxEnv(tempDir) {
   const env = { PATH: process.env.PATH || process.env.Path || '' };
   if (IS_WINDOWS) {
-    // Windows runtimes (python/node/javac) fail to start without these
     for (const k of ['SystemRoot', 'SYSTEMDRIVE', 'TEMP', 'TMP', 'COMSPEC']) {
       if (process.env[k]) env[k] = process.env[k];
     }
   } else {
-    // go/rustc need a writable HOME for their caches; point it at the temp dir
     env.HOME = tempDir;
+    if (process.env.LANG) env.LANG = process.env.LANG;
   }
   return env;
 }
 
-// ── Concurrency guard: caps simultaneous executions to protect the host ──
 let running = 0;
 const waitQueue = [];
 function acquireSlot() {
-  if (running < MAX_CONCURRENT) { running++; return Promise.resolve(); }
-  return new Promise((resolve) => waitQueue.push(resolve));
+  if (running < MAX_CONCURRENT) {
+    running++;
+    return Promise.resolve();
+  }
+  if (waitQueue.length >= MAX_QUEUE) {
+    return Promise.reject(new Error('Too many concurrent executions, please try again'));
+  }
+  return new Promise((resolve, reject) => {
+    const entry = {
+      resolve: () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      reject,
+      timer: null
+    };
+    const timer = setTimeout(() => {
+      const idx = waitQueue.indexOf(entry);
+      if (idx !== -1) waitQueue.splice(idx, 1);
+      reject(new Error('Execution queue timeout'));
+    }, 30000);
+    entry.timer = timer;
+    waitQueue.push(entry);
+  });
 }
+
 function releaseSlot() {
   const next = waitQueue.shift();
-  if (next) next(); // transfer the slot to the queued execution
-  else running--;
+  if (next) {
+    clearTimeout(next.timer);
+    next.resolve();
+  } else {
+    running = Math.max(0, running - 1);
+  }
 }
 
 const LANGUAGE_CONFIGS = {
-  python: { extension: 'py', command: IS_WINDOWS ? 'python' : 'python3', args: ['{file}'], timeout: 10000 },
-  javascript: { extension: 'js', command: 'node', args: ['{file}'], timeout: 10000 },
-  typescript: { extension: 'ts', command: 'ts-node', args: ['{file}'], timeout: 15000 },
-  java: { extension: 'java', mainFile: 'Main.java', compile: 'javac {file}', command: 'java', args: ['{className}'], timeout: 15000 },
-  go: { extension: 'go', command: 'go', args: ['run', '{file}'], timeout: 15000 },
-  cpp: { extension: 'cpp', compile: 'g++ -std=c++17 -O2 {file} -o {binary}', command: '{binary}', args: [], timeout: 15000 },
-  rust: { extension: 'rs', compile: 'rustc {file} -o {binary}', command: '{binary}', args: [], timeout: 20000 },
+  python: {
+    extension: 'py',
+    command: IS_WINDOWS ? 'python' : 'python3',
+    args: ['{file}'],
+    timeout: 10000
+  },
+  javascript: {
+    extension: 'js',
+    command: 'node',
+    args: ['{file}'],
+    timeout: 10000
+  },
+  typescript: {
+    extension: 'ts',
+    command: IS_WINDOWS ? 'npx.cmd' : 'npx',
+    args: ['--yes', 'ts-node', '{file}'],
+    timeout: 15000
+  },
+  java: {
+    extension: 'java',
+    mainFile: 'Main.java',
+    compileCommand: 'javac',
+    compileArgs: ['{file}'],
+    command: 'java',
+    args: ['{className}'],
+    timeout: 15000
+  },
+  go: {
+    extension: 'go',
+    command: 'go',
+    args: ['run', '{file}'],
+    timeout: 15000
+  },
+  cpp: {
+    extension: 'cpp',
+    compileCommand: 'g++',
+    compileArgs: ['-std=c++17', '-O2', '{file}', '-o', '{binary}'],
+    command: '{binaryPath}',
+    args: [],
+    timeout: 15000
+  },
+  rust: {
+    extension: 'rs',
+    compileCommand: 'rustc',
+    compileArgs: ['{file}', '-o', '{binary}'],
+    command: '{binaryPath}',
+    args: [],
+    timeout: 20000
+  },
 };
 
-function generateExecutionId() { return 'exec_' + Date.now() + '_' + crypto.randomBytes(8).toString('hex'); }
+function generateExecutionId() {
+  return 'exec_' + Date.now() + '_' + crypto.randomBytes(8).toString('hex');
+}
 
 function createTempDir(executionId) {
-  const tempDir = path.join(os.tmpdir(), 'hiready_exec_' + executionId);
-  fs.mkdirSync(tempDir, { recursive: true });
-  // World-writable so the unprivileged `nobody` user can run inside it when nsjail is used
-  if (!IS_WINDOWS) { try { fs.chmodSync(tempDir, 0o777); } catch { /* ignore */ } }
+  const base = path.join(os.tmpdir(), 'hiready_exec_' + executionId + '_');
+  const tempDir = fs.mkdtempSync(base);
+  if (!IS_WINDOWS) {
+    try { fs.chmodSync(tempDir, 0o777); } catch { /* ignore */ }
+  }
   return tempDir;
 }
 
 function cleanupTempDir(tempDir) {
-  try { if (fs.existsSync(tempDir)) { fs.rmSync(tempDir, { recursive: true, force: true }); } } catch (err) { console.warn('Failed to cleanup temp dir:', err.message); }
+  try {
+    if (fs.existsSync(tempDir)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  } catch (err) {
+    console.warn('Failed to cleanup temp dir:', err.message);
+  }
 }
 
 function writeCodeFiles(tempDir, files) {
-  const writtenFiles = [];
+  const written = [];
   for (const [filename, content] of Object.entries(files)) {
     const filePath = path.join(tempDir, filename);
-    fs.writeFileSync(filePath, content, { mode: 0o666 });
-    writtenFiles.push({ filename, path: filePath });
+    fs.writeFileSync(filePath, content, { mode: 0o644 });
+    written.push({ filename, path: filePath });
   }
-  return writtenFiles;
+  return written;
 }
 
-function mainFileName(config) { return config.mainFile || ('main.' + config.extension); }
-function binaryName() { return IS_WINDOWS ? 'main.exe' : 'main'; }
+function mainFileName(config) {
+  return config.mainFile || ('main.' + config.extension);
+}
 
-/**
- * Builds the shell command used by both direct execution and nsjail.
- * Returns a single command string (compile + run for compiled languages).
- */
+function binaryName() {
+  return IS_WINDOWS ? 'main.exe' : 'main';
+}
+
 function buildRunCommand(config) {
   const file = mainFileName(config);
-  if (config.compile) {
+  if (config.compileCommand || config.compile) {
     const binary = binaryName();
-    const compileCmd = config.compile.replace('{file}', file).replace('{binary}', binary);
+    const compileCmd = (config.compile || `${config.compileCommand} ${config.compileArgs.join(' ')}`)
+      .replace('{file}', file)
+      .replace('{binary}', binary);
     const runPath = (IS_WINDOWS ? '.\\' : './') + binary;
-    const runCmd = (config.command + (config.args.length ? ' ' + config.args.join(' ') : ''))
+    const runCmd = (config.command + (config.args && config.args.length ? ' ' + config.args.join(' ') : ''))
+      .replace('{binaryPath}', runPath)
       .replace('{binary}', runPath)
-      .replace('{className}', 'Main');
+      .replace('{className}', 'Main')
+      .replace('{file}', file);
     return { full: compileCmd + ' && ' + runCmd };
   }
-  const cmd = (config.command + (config.args.length ? ' ' + config.args.join(' ') : ''))
+  const cmd = (config.command + (config.args && config.args.length ? ' ' + config.args.join(' ') : ''))
     .replace('{file}', file)
     .replace('{className}', 'Main');
   return { full: cmd };
 }
 
-/** Kills a spawned process and its whole tree (shell:true spawns a shell wrapper). */
 function killTree(child) {
   try {
     if (IS_WINDOWS) {
       if (child.pid) spawnSync('taskkill', ['/pid', String(child.pid), '/T', '/F']);
     } else {
-      try { process.kill(-child.pid, 'SIGKILL'); } // kill the process group
-      catch { child.kill('SIGKILL'); }
+      try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill('SIGKILL'); }
     }
-  } catch { try { child.kill('SIGKILL'); } catch { /* already gone */ } }
+  } catch {
+    try { child.kill('SIGKILL'); } catch { /* */ }
+  }
 }
 
-/** Shared spawn logic: always closes stdin (EOF), caps output, settles exactly once. */
 function runProcess(command, args, input, timeout, cwd, tempDir) {
   return new Promise((resolve) => {
     let child;
     try {
       child = spawn(command, args, {
         stdio: ['pipe', 'pipe', 'pipe'],
-        shell: true,
+        shell: false,
         cwd,
         windowsHide: true,
         detached: !IS_WINDOWS,
-        // Secrets never reach executed code — see buildSandboxEnv above
-        env: buildSandboxEnv(cwd || tempDir || os.tmpdir()),
+        env: buildSandboxEnv(cwd || tempDir || os.tmpdir())
       });
     } catch (err) {
-      resolve({ stdout: '', stderr: 'Failed to spawn ' + command + ': ' + err.message, exitCode: -1, signal: null, timedOut: false });
+      resolve({
+        stdout: '',
+        stderr: 'Failed to spawn ' + command + ': ' + err.message,
+        exitCode: -1,
+        signal: null,
+        timedOut: false
+      });
       return;
     }
 
     const cap = (s) => (s.length > MAX_OUTPUT_CHARS ? s.slice(0, MAX_OUTPUT_CHARS) + '\n...[output truncated]' : s);
-    let stdout = '', stderr = '', settled = false, timedOut = false;
+    let stdout = '';
+    let stderr = '';
+    let settled = false;
+    let timedOut = false;
+
     const finish = (exitCode, signal) => {
       if (settled) return;
       settled = true;
@@ -143,13 +228,21 @@ function runProcess(command, args, input, timeout, cwd, tempDir) {
       killTree(child);
     }, timeout);
 
-    // Always write + close stdin so programs reading input get EOF instead of hanging
-    try { if (input) child.stdin.write(input); } catch { /* ignore */ }
-    try { child.stdin.end(); } catch { /* ignore */ }
+    try { if (input) child.stdin.write(input); } catch { /* */ }
+    try { child.stdin.end(); } catch { /* */ }
 
-    child.stdout.on('data', (d) => { if (stdout.length <= MAX_OUTPUT_CHARS) stdout += d.toString(); });
-    child.stderr.on('data', (d) => { if (stderr.length <= MAX_OUTPUT_CHARS) stderr += d.toString(); });
-    child.on('error', (err) => { stderr += '\n' + err.message; finish(-1, null); });
+    child.stdout.on('data', (d) => {
+      const s = d.toString();
+      if (stdout.length < MAX_OUTPUT_CHARS) stdout += s.slice(0, MAX_OUTPUT_CHARS - stdout.length);
+    });
+    child.stderr.on('data', (d) => {
+      const s = d.toString();
+      if (stderr.length < MAX_OUTPUT_CHARS) stderr += s.slice(0, MAX_OUTPUT_CHARS - stderr.length);
+    });
+    child.on('error', (err) => {
+      stderr += '\n' + err.message;
+      finish(-1, null);
+    });
     child.on('close', (code, signal) => {
       if (timedOut) stderr += '\nExecution timed out after ' + timeout + 'ms';
       finish(code, signal);
@@ -158,83 +251,115 @@ function runProcess(command, args, input, timeout, cwd, tempDir) {
 }
 
 async function executeDirect(config, tempDir, input, timeLimit) {
-  // Unsandboxed execution on a Linux server is host-level code execution.
-  // Block it in production unless explicitly opted in via ALLOW_UNSAFE_SANDBOX=1.
-  if (!IS_WINDOWS && process.env.NODE_ENV === 'production' && process.env.ALLOW_UNSAFE_SANDBOX !== '1') {
-    throw new Error(
-      'Secure code sandbox (nsjail) is not available on this server. ' +
-      'Install nsjail, or set ALLOW_UNSAFE_SANDBOX=1 to explicitly permit unsandboxed execution.'
-    );
+  if (process.env.NODE_ENV === 'production' && process.env.ALLOW_UNSAFE_SANDBOX !== '1') {
+    throw new Error('Secure code sandbox (nsjail/container) is required in production. Set ALLOW_UNSAFE_SANDBOX=1 only for explicit non-isolated testing.');
   }
-  const { full } = buildRunCommand(config);
-  const result = await runProcess(full, [], input, timeLimit, tempDir);
+
+  const file = mainFileName(config);
+  const binary = binaryName();
+
+  // Step 1: Compile if necessary
+  if (config.compileCommand) {
+    const compileArgs = (config.compileArgs || []).map(a =>
+      a.replace('{file}', file).replace('{binary}', binary)
+    );
+    const compileResult = await runProcess(config.compileCommand, compileArgs, '', 15000, tempDir, tempDir);
+    if (compileResult.exitCode !== 0 || compileResult.timedOut) {
+      return {
+        ...compileResult,
+        stdout: '',
+        stderr: 'Compilation error:\n' + compileResult.stderr,
+        sandbox: 'direct'
+      };
+    }
+  }
+
+  // Step 2: Execute
+  let runCommand = config.command;
+  if (runCommand === '{binaryPath}') {
+    runCommand = path.join(tempDir, binary);
+  }
+  const runArgs = (config.args || []).map(a =>
+    a.replace('{file}', file).replace('{className}', 'Main').replace('{binary}', binary)
+  );
+
+  const result = await runProcess(runCommand, runArgs, input, timeLimit, tempDir, tempDir);
   return { ...result, sandbox: 'direct' };
 }
 
-// ── nsjail support (Linux production servers) ──────────────────────────────
-// When nsjail is installed, code runs inside it with hard resource limits:
-//   --rlimit_as    memory cap (MB)        --user/--group 65534 ("nobody")
-//   --time_limit   wall-clock cap (s)     --rlimit_cpu  CPU-seconds cap
-// Requires root (or CAP_SYS_ADMIN). Flags may need tuning per server; if
-// nsjail itself fails to launch we degrade gracefully to direct execution.
-
-let nsjailAvailable = null; // cached probe result
+let nsjailAvailable = null;
 function detectNsjail() {
   if (nsjailAvailable !== null) return nsjailAvailable;
-  if (IS_WINDOWS) { nsjailAvailable = false; return nsjailAvailable; } // nsjail is Linux-only
+  if (IS_WINDOWS) { nsjailAvailable = false; return nsjailAvailable; }
   try {
     const r = spawnSync('nsjail', ['--help'], { timeout: 3000 });
     nsjailAvailable = r.status === 0;
-  } catch { nsjailAvailable = false; }
+  } catch {
+    nsjailAvailable = false;
+  }
   return nsjailAvailable;
 }
 
 async function executeWithNsjail(config, tempDir, input, timeLimit, memoryLimit, cpuLimit) {
   const { full } = buildRunCommand(config);
   const args = [
-    '-Mo',                                  // one-shot execution mode
-    '--user', '65534', '--group', '65534',  // drop privileges to nobody
-    '--rlimit_as', String(memoryLimit),     // memory cap (MB)
-    '--rlimit_cpu', String(cpuLimit),       // CPU-seconds cap
-    '--rlimit_fsize', '64',                 // max written file size (MB)
-    '--rlimit_nofile', '64',
+    '-Mo', '--user', '65534', '--group', '65534',
+    '--rlimit_as', String(memoryLimit),
+    '--rlimit_cpu', String(cpuLimit),
+    '--rlimit_fsize', '64', '--rlimit_nofile', '64',
     '--time_limit', String(Math.ceil(timeLimit / 1000)),
-    '--disable_proc',
-    '--quiet',
-    '--cwd', tempDir,
-    '--bindmount', tempDir + ':' + tempDir, // rw access to the work dir only
+    '--disable_proc', '--quiet', '--cwd', tempDir,
+    '--bindmount', tempDir + ':' + tempDir,
+    '--bindmount_ro', '/usr:/usr',
+    '--bindmount_ro', '/lib:/lib',
+    '--bindmount_ro', '/lib64:/lib64',
+    '--bindmount_ro', '/bin:/bin',
+    '--clone_newnet', '--clone_newipc', '--clone_newuts',
     '--', '/bin/sh', '-c', full,
   ];
-  // nsjail itself gets a slightly larger wall-clock allowance than the payload
-  const result = await runProcess('nsjail', args, input, timeLimit + 5000, tempDir);
-  // exit 255 with no output typically means nsjail failed to set up its sandbox
-  if (result.exitCode === 255 && !result.stdout) {
+  const result = await runProcess('nsjail', args, input, timeLimit + 5000, tempDir, tempDir);
+  const isNsjailError = result.stderr && /nsjail/i.test(result.stderr);
+  if (result.exitCode === 255 && !result.stdout && isNsjailError) {
     const fallback = await executeDirect(config, tempDir, input, timeLimit);
-    return { ...fallback, sandbox: 'direct-fallback', nsjailError: result.stderr };
+    return { ...fallback, sandbox: 'direct-fallback', nsjailError: result.stderr.slice(0, 1000) };
   }
   return { ...result, sandbox: 'nsjail' };
+}
+
+function scrubPaths(result, tempDir) {
+  const scrub = (s) => (typeof s === 'string' ? s.split(tempDir).join('[exec-dir]') : s);
+  return {
+    ...result,
+    stdout: scrub(result.stdout),
+    stderr: scrub(result.stderr),
+    ...(result.nsjailError ? { nsjailError: scrub(result.nsjailError) } : {}),
+  };
 }
 
 async function executeInSandbox(options) {
   const { language, code, input = '', files = {}, timeLimit = 10000, memoryLimit = 256, cpuLimit = 2 } = options;
   const config = LANGUAGE_CONFIGS[language];
   if (!config) throw new Error('Unsupported language: ' + language);
-
-  await acquireSlot();
-  const executionId = generateExecutionId();
-  const tempDir = createTempDir(executionId);
+  if (typeof input === 'string' && input.length > 10000) throw new Error('Input too long');
+  let acquired = false;
+  let tempDir = null;
   try {
+    await acquireSlot();
+    acquired = true;
+    tempDir = createTempDir(generateExecutionId());
     const mainFile = mainFileName(config);
-    const allFiles = { [mainFile]: code, ...files };
+    const allFiles = { ...files, [mainFile]: code };
     writeCodeFiles(tempDir, allFiles);
-
+    let result;
     if (detectNsjail()) {
-      return await executeWithNsjail(config, tempDir, input, timeLimit, memoryLimit, cpuLimit);
+      result = await executeWithNsjail(config, tempDir, input, timeLimit, memoryLimit, cpuLimit);
+    } else {
+      result = await executeDirect(config, tempDir, input, timeLimit);
     }
-    return await executeDirect(config, tempDir, input, timeLimit);
+    return scrubPaths(result, tempDir);
   } finally {
-    cleanupTempDir(tempDir);
-    releaseSlot();
+    if (acquired) releaseSlot();
+    if (tempDir) cleanupTempDir(tempDir);
   }
 }
 
@@ -242,11 +367,7 @@ async function executeCode(options) {
   const startTime = Date.now();
   try {
     const result = await executeInSandbox(options);
-    return {
-      ...result,
-      success: result.exitCode === 0 && !result.timedOut,
-      executionTime: Date.now() - startTime,
-    };
+    return { ...result, success: result.exitCode === 0 && !result.timedOut, executionTime: Date.now() - startTime };
   } catch (error) {
     return { success: false, stdout: '', stderr: error.message, exitCode: -1, executionTime: Date.now() - startTime, timedOut: false, error: error.message };
   }

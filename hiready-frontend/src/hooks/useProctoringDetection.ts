@@ -32,6 +32,21 @@ export interface ProctoringState {
   videoRef: React.RefObject<HTMLVideoElement>;
 }
 
+let modelsPromise: Promise<[blazeface.BlazeFaceModel, cocoSsd.ObjectDetection]> | null = null;
+
+async function getSharedModels(): Promise<[blazeface.BlazeFaceModel, cocoSsd.ObjectDetection]> {
+  if (!modelsPromise) {
+    modelsPromise = (async () => {
+      const [faceModel, personModel] = await Promise.all([
+        blazeface.load(),
+        cocoSsd.load({ base: "lite_mobilenet_v2" }),
+      ]);
+      return [faceModel, personModel];
+    })();
+  }
+  return modelsPromise;
+}
+
 export function useProctoringDetection(sessionId: string): ProctoringState {
   const videoRef = useRef<HTMLVideoElement>(null!);
   const [status, setStatus] = useState("Initializing camera...");
@@ -43,7 +58,6 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
 
   const blazefaceModelRef = useRef<blazeface.BlazeFaceModel | null>(null);
   const cocoModelRef = useRef<cocoSsd.ObjectDetection | null>(null);
-  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const lastLoggedRef = useRef<Record<string, number>>({});
 
@@ -85,8 +99,9 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
         streamRef.current = stream;
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
         }
-        registerWebcamStream(stream);
+        registerWebcamStream(stream, videoRef.current);
         setCameraDenied(false);
       } catch {
         if (cancelled) return;
@@ -101,7 +116,7 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
 
     return () => {
       cancelled = true;
-      registerWebcamStream(null);
+      registerWebcamStream(null, null);
       if (streamRef.current) {
         streamRef.current.getTracks().forEach((t) => t.stop());
       }
@@ -115,30 +130,16 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
 
     async function loadModels() {
       try {
-        const faceModel = await blazeface.load();
+        const [faceModel, personModel] = await getSharedModels();
         if (cancelled) return;
         blazefaceModelRef.current = faceModel;
-      } catch {
-        if (!cancelled) {
-          setModelError("Face detection model failed to load.");
-        }
-        return;
-      }
-
-      try {
-        const personModel = await cocoSsd.load({ base: "lite_mobilenet_v2" });
-        if (cancelled) return;
         cocoModelRef.current = personModel;
-      } catch {
-        if (!cancelled) {
-          setModelError("Person detection model failed to load.");
-        }
-        return;
-      }
-
-      if (!cancelled) {
         setModelsLoading(false);
         setStatus("Models loaded. Monitoring...");
+      } catch {
+        if (!cancelled) {
+          setModelError("Computer vision detection models failed to load.");
+        }
       }
     }
 
@@ -153,56 +154,76 @@ export function useProctoringDetection(sessionId: string): ProctoringState {
   useEffect(() => {
     if (cameraDenied || modelsLoading || modelError) return;
 
+    let isMounted = true;
+    let isProcessing = false;
+    let timerId: ReturnType<typeof setTimeout> | null = null;
+
     async function runDetection() {
+      if (!isMounted) return;
       const video = videoRef.current;
-      if (!video || video.readyState < 4) return;
 
-      try {
-        // Face detection via BlazeFace
-        const faces = blazefaceModelRef.current
-          ? await blazefaceModelRef.current.estimateFaces(video, false)
-          : [];
+      if (video && video.readyState >= 4 && !isProcessing) {
+        isProcessing = true;
+        try {
+          // Face detection via BlazeFace
+          const faces = blazefaceModelRef.current
+            ? await blazefaceModelRef.current.estimateFaces(video, false)
+            : [];
 
-        // Person detection via COCO-SSD
-        const predictions = cocoModelRef.current
-          ? await cocoModelRef.current.detect(video)
-          : [];
+          // Person detection via COCO-SSD
+          const predictions = cocoModelRef.current
+            ? await cocoModelRef.current.detect(video)
+            : [];
 
-        const newWarnings: WarningType[] = [];
+          if (!isMounted) return;
 
-        // Face logic
-        if (faces.length === 0) {
-          newWarnings.push("no_face_detected");
-          logEvent("no_face_detected");
-        } else if (faces.length > 1) {
-          newWarnings.push("multiple_faces_detected");
-          logEvent("multiple_faces_detected");
+          const newWarnings: WarningType[] = [];
+
+          // Face logic
+          if (faces.length === 0) {
+            newWarnings.push("no_face_detected");
+            logEvent("no_face_detected");
+          } else if (faces.length > 1) {
+            newWarnings.push("multiple_faces_detected");
+            logEvent("multiple_faces_detected");
+          }
+
+          // Person logic
+          const personCount = predictions.filter((p) => p.class === "person").length;
+          if (personCount > 1) {
+            newWarnings.push("multiple_people_detected");
+            logEvent("multiple_people_detected");
+          }
+
+          setWarnings((prev) => {
+            const isSame = prev.length === newWarnings.length && prev.every((w, i) => w === newWarnings[i]);
+            return isSame ? prev : newWarnings;
+          });
+
+          if (newWarnings.length === 0) {
+            setStatus("Face detected");
+          } else {
+            setStatus(
+              newWarnings.map((w) => WARNING_MESSAGES[w]).join(" | ")
+            );
+          }
+        } catch {
+          // Silently recover — single frame inference error should not break loop
+        } finally {
+          isProcessing = false;
         }
+      }
 
-        // Person logic
-        const personCount = predictions.filter((p) => p.class === "person").length;
-        if (personCount > 1) {
-          newWarnings.push("multiple_people_detected");
-          logEvent("multiple_people_detected");
-        }
-
-        setWarnings(newWarnings);
-        if (newWarnings.length === 0) {
-          setStatus("Face detected");
-        } else {
-          setStatus(
-            newWarnings.map((w) => WARNING_MESSAGES[w]).join(" | ")
-          );
-        }
-      } catch {
-        // Silently recover — a single frame failure should not crash the loop
+      if (isMounted) {
+        timerId = setTimeout(runDetection, DETECTION_INTERVAL_MS);
       }
     }
 
-    intervalRef.current = setInterval(runDetection, DETECTION_INTERVAL_MS);
+    runDetection();
 
     return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      isMounted = false;
+      if (timerId) clearTimeout(timerId);
     };
   }, [cameraDenied, modelsLoading, modelError, logEvent]);
 

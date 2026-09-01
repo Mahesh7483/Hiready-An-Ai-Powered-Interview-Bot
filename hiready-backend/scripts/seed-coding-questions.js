@@ -1,332 +1,295 @@
-/**
- * Seeds coding questions (LC easy/medium/hard) with per-language starter
- * code, visible + hidden test cases, company tags and explanations.
- *
- * I/O contract for candidates: the program receives ALL whitespace-separated
- * input tokens as `args` and prints its answer to stdout. Starter code for
- * every language contains the stdin-reading boilerplate already.
- *
- * Usage: node scripts/seed-coding-questions.js [--upgrade]
- */
 require('dotenv').config();
 const mongoose = require('mongoose');
 const CodingQuestion = require('../models/CodingQuestion');
 
-// ── Per-language starter code (generic token-based I/O) ────────────────────
-function starterFor(lang, title) {
-  const hint = `Solve: ${title}. args = the whitespace-separated input tokens (strings) — parse as needed. Print the answer to stdout.`;
-  const map = {
-    python: `import sys\n\ndef solve(args):\n    """${hint}"""\n    # Write your solution here\n    pass\n\nif __name__ == "__main__":\n    print(solve(sys.stdin.read().split()))`,
-    javascript: `/**\n * ${hint}\n */\nfunction solve(args) {\n  // Write your solution here\n}\n\nconst fs = require("fs");\nconst tokens = fs.readFileSync(0, "utf8").split(/\\s+/).filter(Boolean);\nconsole.log(solve(tokens));`,
-    typescript: `/**\n * ${hint}\n */\nfunction solve(args: string[]): string | number {\n  // Write your solution here\n  return "";\n}\n\nconst fs = require("fs");\nconst tokens: string[] = fs.readFileSync(0, "utf8").split(/\\s+/).filter(Boolean);\nconsole.log(solve(tokens));`,
-    java: `import java.util.*;\nimport java.io.*;\n\n/**\n * ${hint}\n */\npublic class Main {\n    static String solve(String[] args) {\n        // Write your solution here\n        return "";\n    }\n\n    public static void main(String[] args) throws IOException {\n        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));\n        StringBuilder sb = new StringBuilder();\n        String line;\n        while ((line = br.readLine()) != null) { sb.append(line).append(' '); }\n        String[] tokens = sb.toString().trim().isEmpty() ? new String[0] : sb.toString().trim().split("\\\\s+");\n        System.out.println(solve(tokens));\n    }\n}`,
-    go: `package main\n\nimport (\n\t"bufio"\n\t"fmt"\n\t"os"\n\t"strings"\n)\n\n/**\n * ${hint}\n */\nfunc solve(args []string) string {\n\t// Write your solution here\n\treturn ""\n}\n\nfunc main() {\n\tscanner := bufio.NewScanner(os.Stdin)\n\tscanner.Buffer(make([]byte, 1024*1024), 1024*1024)\n\tvar tokens []string\n\tfor scanner.Scan() {\n\t\ttokens = append(tokens, strings.Fields(scanner.Text())...)\n\t}\n\tfmt.Println(solve(tokens))\n}`,
-    cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\n/**\n * ${hint}\n */\nstring solve(vector<string> args) {\n    // Write your solution here\n    return "";\n}\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    vector<string> args;\n    string tok;\n    while (cin >> tok) args.push_back(tok);\n    cout << solve(args) << endl;\n    return 0;\n}`,
-    rust: `/**\n * ${hint}\n */\nfn solve(args: Vec<String>) -> String {\n    // Write your solution here\n    String::new()\n}\n\nfn main() {\n    use std::io::Read;\n    let mut input = String::new();\n    std::io::stdin().read_to_string(&mut input).unwrap();\n    let args: Vec<String> = input.split_whitespace().map(String::from).collect();\n    println!("{}", solve(args));\n}`,
-  };
-  return map[lang] || '';
+const MONGO_URI = process.env.MONGO_URI;
+if (!MONGO_URI) {
+  console.error('MONGO_URI not set in .env');
+  process.exit(1);
 }
 
-/** Appends the constraints section to the question description. */
-function constraintsLine(con) {
-  return con ? `**Constraints:** ${con}\n\n` : '';
-}
+const questions = [
+  {
+    title: 'Two Sum',
+    slug: 'two-sum',
+    description: `Given an array of integers nums and an integer target, return indices of the two numbers such that they add up to target.
 
-function q(t, d, c, tags, co, desc, con, tests, ex) {
-  return {
-    title: t,
-    slug: t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
-    difficulty: d,
-    category: c,
-    tags,
-    companies: co,
-    description: constraintsLine(con) + desc,
-    constraints: con || '',
-    testCases: tests.map(([input, output, isHidden, points]) => ({
-      input, output, isHidden: !!isHidden, points: points || 1,
-    })),
-    explanation: ex || '',
+You may assume that each input would have exactly one solution, and you may not use the same element twice.
+
+You can return the answer in any order.`,
+    difficulty: 'easy',
+    tags: ['array', 'hash-table'],
+    category: 'arrays',
+    companies: ['Google', 'Amazon', 'Microsoft', 'Apple', 'Meta'],
     starterCode: {
-      python: starterFor('python', t),
-      javascript: starterFor('javascript', t),
-      typescript: starterFor('typescript', t),
-      java: starterFor('java', t),
-      go: starterFor('go', t),
-      cpp: starterFor('cpp', t),
-      rust: starterFor('rust', t),
+      python: 'class Solution:\n    def twoSum(self, nums: List[int], target: int) -> List[int]:\n        # Write your solution here\n        pass',
+      javascript: 'var twoSum = function(nums, target) {\n    // Write your solution here\n};',
+      typescript: 'function twoSum(nums: number[], target: number): number[] {\n    // Write your solution here\n}',
+      java: 'class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        // Write your solution here\n        return new int[0];\n    }\n}',
+      go: 'func twoSum(nums []int, target int) []int {\n    // Write your solution here\n    return []int{}\n}',
+      cpp: 'class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        // Write your solution here\n        return {};\n    }\n};',
+      rust: 'impl Solution {\n    pub fn two_sum(nums: Vec<i32>, target: i32) -> Vec<i32> {\n        // Write your solution here\n        vec![]\n    }\n}',
     },
-    timeLimit: d === 'hard' ? 5000 : 3000,
+    solution: {
+      python: 'class Solution:\n    def twoSum(self, nums: List[int], target: int) -> List[int]:\n        num_map = {}\n        for i, num in enumerate(nums):\n            complement = target - num\n            if complement in num_map:\n                return [num_map[complement], i]\n            num_map[num] = i\n        return []',
+      javascript: 'var twoSum = function(nums, target) {\n    const map = new Map();\n    for (let i = 0; i < nums.length; i++) {\n        const complement = target - nums[i];\n        if (map.has(complement)) {\n            return [map.get(complement), i];\n        }\n        map.set(nums[i], i);\n    }\n    return [];\n};',
+      typescript: 'function twoSum(nums: number[], target: number): number[] {\n    const map = new Map<number, number>();\n    for (let i = 0; i < nums.length; i++) {\n        const complement = target - nums[i];\n        if (map.has(complement)) {\n            return [map.get(complement)!, i];\n        }\n        map.set(nums[i], i);\n    }\n    return [];\n}',
+      java: 'class Solution {\n    public int[] twoSum(int[] nums, int target) {\n        Map<Integer, Integer> map = new HashMap<>();\n        for (int i = 0; i < nums.length; i++) {\n            int complement = target - nums[i];\n            if (map.containsKey(complement)) {\n                return new int[]{map.get(complement), i};\n            }\n            map.put(nums[i], i);\n        }\n        return new int[0];\n    }\n}',
+      go: 'func twoSum(nums []int, target int) []int {\n    m := make(map[int]int)\n    for i, num := range nums {\n        complement := target - num\n        if j, ok := m[complement]; ok {\n            return []int{j, i}\n        }\n        m[num] = i\n    }\n    return []int{}\n}',
+      cpp: 'class Solution {\npublic:\n    vector<int> twoSum(vector<int>& nums, int target) {\n        unordered_map<int, int> map;\n        for (int i = 0; i < nums.size(); i++) {\n            int complement = target - nums[i];\n            if (map.count(complement)) {\n                return {map[complement], i};\n            }\n            map[nums[i]] = i;\n        }\n        return {};\n    }\n};',
+      rust: 'impl Solution {\n    pub fn two_sum(nums: Vec<i32>, target: i32) -> Vec<i32> {\n        use std::collections::HashMap;\n        let mut map = HashMap::new();\n        for (i, &num) in nums.iter().enumerate() {\n            let complement = target - num;\n            if let Some(&j) = map.get(&complement) {\n                return vec![j as i32, i as i32];\n            }\n            map.insert(num, i);\n        }\n        vec![]\n    }\n}',
+    },
+    testCases: [
+      { input: '[2,7,11,15]\n9', output: '[0,1]', isHidden: false, points: 1, description: 'Example 1' },
+      { input: '[3,2,4]\n6', output: '[1,2]', isHidden: false, points: 1, description: 'Example 2' },
+      { input: '[3,3]\n6', output: '[0,1]', isHidden: false, points: 1, description: 'Example 3' },
+      { input: '[1,2,3,4,5]\n9', output: '[3,4]', isHidden: true, points: 1, description: 'Hidden test 1' },
+      { input: '[-1,-2,-3,-4,-5]\n-8', output: '[2,4]', isHidden: true, points: 1, description: 'Hidden test 2' },
+    ],
+    constraints: '2 <= nums.length <= 10^4\n-10^9 <= nums[i] <= 10^9\n-10^9 <= target <= 10^9\nOnly one valid answer exists.',
+    timeLimit: 5000,
     memoryLimit: 256,
+    explanation: 'Use a hash map to store each number and its index. For each number, check if its complement (target - num) exists in the map. This gives O(n) time and O(n) space complexity.',
     isPublished: true,
     isActive: true,
-  };
-}
+  },
+  {
+    title: 'Valid Parentheses',
+    slug: 'valid-parentheses',
+    description: `Given a string s containing just the characters '(', ')', '{', '}', '[' and ']', determine if the input string is valid.
 
-const QUESTIONS_PART3 = [
-  q('Contains Duplicate', 'easy', 'arrays', ['hash-set'], ['Amazon', 'Google'],
-    'Input: n, then n integers. Print "true" if any value appears twice, else "false".',
-    '',
-    [['4 1 2 3 1', 'true', false, 10], ['4 1 2 3 4', 'false', false, 10], ['1 0', 'false', true, 5]],
-    'Insert into a set; if already present, true.'),
-  q('Roman to Integer', 'easy', 'math', ['hash-map'], ['Bloomberg', 'Uber'],
-    'Input: a Roman numeral. Print its integer value.',
-    '',
-    [['MCMXCIV', '1994', false, 15], ['LVIII', '58', false, 10], ['IX', '9', true, 5]],
-    'If a smaller value precedes a larger one, subtract it.'),
-  q('Longest Common Prefix', 'easy', 'strings', ['sorting'], ['Meta'],
-    'Input: n, then n words. Print the longest common prefix (empty output if none).',
-    '',
-    [['3 flower flow flight', 'fl', false, 10], ['2 dog cat', '', false, 5], ['3 interspecies interstellar interstate', 'inters', true, 10]],
-    'Compare characters column-wise across all words.'),
-  q('Add Binary', 'easy', 'math', ['bit-manipulation'], ['Meta'],
-    'Input: two binary strings. Print their sum as a binary string.',
-    '',
-    [['1010 1011', '10101', false, 10], ['11 1', '100', false, 10], ['0 0', '0', true, 5]],
-    'Add from the least significant bit with carry.'),
-  q('Plus One', 'easy', 'arrays', ['math'], ['Google'],
-    'Input: n, then n digits of a number (most significant first). Print the digits after adding one, space-separated.',
-    '',
-    [['3 1 2 3', '1 2 4', false, 10], ['1 9', '1 0', false, 10], ['4 9 9 9 9', '1 0 0 0 0', true, 15]],
-    'Add carry from the last digit; prepend 1 if carry remains.'),
-  q('Power of Two', 'easy', 'math', ['bit-manipulation'], ['Google', 'Amazon'],
-    'Input: an integer. Print "true" if it is a power of two, else "false".',
-    '',
-    [['16', 'true', false, 10], ['3', 'false', false, 10], ['1', 'true', true, 5], ['0', 'false', true, 5]],
-    'n > 0 and (n & (n-1)) == 0.'),
-  q('Move Zeroes', 'easy', 'arrays', ['two-pointers'], ['Meta', 'Bloomberg'],
-    'Input: n, then n integers. Move all zeroes to the end keeping the order of non-zeroes. Print the result space-separated.',
-    '',
-    [['5 0 1 0 3 12', '1 3 12 0 0', false, 10], ['1 0', '0', false, 5], ['3 4 2 4', '4 2 4', true, 10]],
-    'Snowball approach: swap each non-zero with the first zero seen.'),
-  q('Merge Two Sorted Lists Values', 'easy', 'linked-lists', ['two-pointers'], ['Amazon'],
-    'Input: n, m, then n values of list A, then m values of list B (each sorted). Print the merged sorted values space-separated.',
-    '',
-    [['3 3 1 2 4 1 3 4', '1 1 2 3 4 4', false, 10], ['0 1 5', '5', false, 10], ['2 2 1 3 2 4', '1 2 3 4', true, 10]],
-    'Merge by value like LeetCode 21 but on arrays.'),
-  q('Happy Number', 'easy', 'math', ['hash-set'], ['Uber', 'Bloomberg'],
-    'Input: n. Repeatedly replace n with the sum of squares of its digits. Print "true" if it reaches 1, else "false".',
-    '',
-    [['19', 'true', false, 15], ['2', 'false', false, 10], ['7', 'true', true, 10]],
-    'Detect the 4-loop with a visited set or Floyd cycle detection.'),
-  q('Majority Element', 'easy', 'arrays', ['voting'], ['Amazon', 'Adobe'],
-    'Input: n, then n integers. Print the element appearing more than n/2 times.',
-    'The majority element always exists.',
-    [['3 3 2 3', '3', false, 10], ['5 2 2 1 1 2', '2', false, 10], ['1 8', '8', true, 5]],
-    'Boyer-Moore voting: cancel out pairs; the survivor wins.'),
+An input string is valid if:
+1. Open brackets must be closed by the same type of brackets.
+2. Open brackets must be closed in the correct order.
+3. Every close bracket has a corresponding open bracket of the same type.`,
+    difficulty: 'easy',
+    tags: ['string', 'stack'],
+    category: 'strings',
+    companies: ['Google', 'Amazon', 'Microsoft', 'Bloomberg'],
+    starterCode: {
+      python: 'class Solution:\n    def isValid(self, s: str) -> bool:\n        # Write your solution here\n        pass',
+      javascript: 'var isValid = function(s) {\n    // Write your solution here\n};',
+      typescript: 'function isValid(s: string): boolean {\n    // Write your solution here\n    return false;\n}',
+      java: 'class Solution {\n    public boolean isValid(String s) {\n        // Write your solution here\n        return false;\n    }\n}',
+      go: 'func isValid(s string) bool {\n    // Write your solution here\n    return false\n}',
+      cpp: 'class Solution {\npublic:\n    bool isValid(string s) {\n        // Write your solution here\n        return false;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn is_valid(s: String) -> bool {\n        // Write your solution here\n        false\n    }\n}',
+    },
+    solution: {
+      python: 'class Solution:\n    def isValid(self, s: str) -> bool:\n        stack = []\n        mapping = {")": "(", "}": "{", "]": "["}\n        for char in s:\n            if char in mapping:\n                if not stack or stack.pop() != mapping[char]:\n                    return False\n            else:\n                stack.append(char)\n        return not stack',
+      javascript: 'var isValid = function(s) {\n    const stack = [];\n    const map = { ")": "(", "}": "{", "]": "[" };\n    for (const char of s) {\n        if (map[char]) {\n            if (stack.pop() !== map[char]) return false;\n        } else {\n            stack.push(char);\n        }\n    }\n    return stack.length === 0;\n};',
+      typescript: 'function isValid(s: string): boolean {\n    const stack: string[] = [];\n    const map: Record<string, string> = { ")": "(", "}": "{", "]": "[" };\n    for (const char of s) {\n        if (map[char]) {\n            if (stack.pop() !== map[char]) return false;\n        } else {\n            stack.push(char);\n        }\n    }\n    return stack.length === 0;\n}',
+      java: 'class Solution {\n    public boolean isValid(String s) {\n        Stack<Character> stack = new Stack<>();\n        Map<Character, Character> map = Map.of(\')\', \'(\', \'}\', \'{\', \']\', \'[\');\n        for (char c : s.toCharArray()) {\n            if (map.containsKey(c)) {\n                if (stack.isEmpty() || stack.pop() != map.get(c)) return false;\n            } else {\n                stack.push(c);\n            }\n        }\n        return stack.isEmpty();\n    }\n}',
+      go: 'func isValid(s string) bool {\n    stack := []rune{}\n    pairs := map[rune]rune{")": "(", "}": "{", "]": "["}\n    for _, c := range s {\n        if open, ok := pairs[c]; ok {\n            if len(stack) == 0 || stack[len(stack)-1] != open {\n                return false\n            }\n            stack = stack[:len(stack)-1]\n        } else {\n            stack = append(stack, c)\n        }\n    }\n    return len(stack) == 0\n}',
+      cpp: 'class Solution {\npublic:\n    bool isValid(string s) {\n        stack<char> st;\n        unordered_map<char, char> map = {{")", "("}, {"}", "{"}, {"]", "["}};\n        for (char c : s) {\n            if (map.count(c)) {\n                if (st.empty() || st.top() != map[c]) return false;\n                st.pop();\n            } else {\n                st.push(c);\n            }\n        }\n        return st.empty();\n    }\n};',
+      rust: 'impl Solution {\n    pub fn is_valid(s: String) -> bool {\n        let mut stack = Vec::new();\n        let pairs = [(")", "("), ("}", "{"), ("]", "[")];\n        for c in s.chars() {\n            if let Some(&open) = pairs.iter().find(|&&(close, _)| close == c.to_string()).map(|(_, open)| open) {\n                if stack.pop() != Some(open.chars().next().unwrap()) {\n                    return false;\n                }\n            } else {\n                stack.push(c);\n            }\n        }\n        stack.is_empty()\n    }\n}',
+    },
+    testCases: [
+      { input: '()', output: 'true', isHidden: false, points: 1, description: 'Simple valid' },
+      { input: '()[]{}', output: 'true', isHidden: false, points: 1, description: 'Multiple types' },
+      { input: '(]', output: 'false', isHidden: false, points: 1, description: 'Mismatched' },
+      { input: '([)]', output: 'false', isHidden: true, points: 1, description: 'Wrong order' },
+      { input: '{[]}', output: 'true', isHidden: true, points: 1, description: 'Nested' },
+    ],
+    constraints: '1 <= s.length <= 10^4\ns consists of parentheses only \'()[]{}\'.',
+    timeLimit: 5000,
+    memoryLimit: 256,
+    explanation: 'Use a stack to track opening brackets. When encountering a closing bracket, check if it matches the top of the stack. O(n) time, O(n) space.',
+    isPublished: true,
+    isActive: true,
+  },
+  {
+    title: 'Merge Two Sorted Lists',
+    slug: 'merge-two-sorted-lists',
+    description: `You are given the heads of two sorted linked lists list1 and list2.
+
+Merge the two lists into one sorted list. The list should be made by splicing together the nodes of the first two lists.
+
+Return the head of the merged linked list.`,
+    difficulty: 'easy',
+    tags: ['linked-list', 'recursion'],
+    category: 'linked-lists',
+    companies: ['Amazon', 'Microsoft', 'Apple', 'Google'],
+    starterCode: {
+      python: '# Definition for singly-linked list.\n# class ListNode:\n#     def __init__(self, val=0, next=None):\n#         self.val = val\n#         self.next = next\nclass Solution:\n    def mergeTwoLists(self, list1: Optional[ListNode], list2: Optional[ListNode]) -> Optional[ListNode]:\n        # Write your solution here\n        pass',
+      javascript: 'var mergeTwoLists = function(list1, list2) {\n    // Write your solution here\n};',
+      typescript: 'function mergeTwoLists(list1: ListNode | null, list2: ListNode | null): ListNode | null {\n    // Write your solution here\n    return null;\n}',
+      java: 'class Solution {\n    public ListNode mergeTwoLists(ListNode list1, ListNode list2) {\n        // Write your solution here\n        return null;\n    }\n}',
+      go: 'func mergeTwoLists(list1 *ListNode, list2 *ListNode) *ListNode {\n    // Write your solution here\n    return nil\n}',
+      cpp: 'class Solution {\npublic:\n    ListNode* mergeTwoLists(ListNode* list1, ListNode* list2) {\n        // Write your solution here\n        return nullptr;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn merge_two_lists(list1: Option<Box<ListNode>>, list2: Option<Box<ListNode>>) -> Option<Box<ListNode>> {\n        // Write your solution here\n        None\n    }\n}',
+    },
+    solution: {
+      python: '# Definition for singly-linked list.\n# class ListNode:\n#     def __init__(self, val=0, next=None):\n#         self.val = val\n#         self.next = next\nclass Solution:\n    def mergeTwoLists(self, list1: Optional[ListNode], list2: Optional[ListNode]) -> Optional[ListNode]:\n        dummy = ListNode()\n        tail = dummy\n        while list1 and list2:\n            if list1.val < list2.val:\n                tail.next = list1\n                list1 = list1.next\n            else:\n                tail.next = list2\n                list2 = list2.next\n            tail = tail.next\n        tail.next = list1 or list2\n        return dummy.next',
+      javascript: 'var mergeTwoLists = function(list1, list2) {\n    const dummy = { val: 0, next: null };\n    let tail = dummy;\n    while (list1 && list2) {\n        if (list1.val < list2.val) {\n            tail.next = list1;\n            list1 = list1.next;\n        } else {\n            tail.next = list2;\n            list2 = list2.next;\n        }\n        tail = tail.next;\n    }\n    tail.next = list1 || list2;\n    return dummy.next;\n};',
+      typescript: 'function mergeTwoLists(list1: ListNode | null, list2: ListNode | null): ListNode | null {\n    const dummy: ListNode = { val: 0, next: null };\n    let tail: ListNode = dummy;\n    while (list1 && list2) {\n        if (list1.val < list2.val) {\n            tail.next = list1;\n            list1 = list1.next;\n        } else {\n            tail.next = list2;\n            list2 = list2.next;\n        }\n        tail = tail.next;\n    }\n    tail.next = list1 || list2;\n    return dummy.next;\n}',
+      java: 'class Solution {\n    public ListNode mergeTwoLists(ListNode list1, ListNode list2) {\n        ListNode dummy = new ListNode(0);\n        ListNode tail = dummy;\n        while (list1 != null && list2 != null) {\n            if (list1.val < list2.val) {\n                tail.next = list1;\n                list1 = list1.next;\n            } else {\n                tail.next = list2;\n                list2 = list2.next;\n            }\n            tail = tail.next;\n        }\n        tail.next = (list1 != null) ? list1 : list2;\n        return dummy.next;\n    }\n}',
+      go: 'func mergeTwoLists(list1 *ListNode, list2 *ListNode) *ListNode {\n    dummy := &ListNode{}\n    tail := dummy\n    for list1 != nil && list2 != nil {\n        if list1.Val < list2.Val {\n            tail.Next = list1\n            list1 = list1.Next\n        } else {\n            tail.Next = list2\n            list2 = list2.Next\n        }\n        tail = tail.Next\n    }\n    if list1 != nil {\n        tail.Next = list1\n    } else {\n        tail.Next = list2\n    }\n    return dummy.Next\n}',
+      cpp: 'class Solution {\npublic:\n    ListNode* mergeTwoLists(ListNode* list1, ListNode* list2) {\n        ListNode dummy(0);\n        ListNode* tail = &dummy;\n        while (list1 && list2) {\n            if (list1->val < list2->val) {\n                tail->next = list1;\n                list1 = list1->next;\n            } else {\n                tail->next = list2;\n                list2 = list2->next;\n            }\n            tail = tail->next;\n        }\n        tail->next = list1 ? list1 : list2;\n        return dummy.next;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn merge_two_lists(list1: Option<Box<ListNode>>, list2: Option<Box<ListNode>>) -> Option<Box<ListNode>> {\n        let mut dummy = Box::new(ListNode::new(0));\n        let mut tail = &mut dummy;\n        let (mut l1, mut l2) = (list1, list2);\n        while l1.is_some() && l2.is_some() {\n            if l1.as_ref().unwrap().val < l2.as_ref().unwrap().val {\n                tail.next = l1;\n                l1 = tail.next.as_mut().unwrap().next.take();\n            } else {\n                tail.next = l2;\n                l2 = tail.next.as_mut().unwrap().next.take();\n            }\n            tail = tail.next.as_mut().unwrap();\n        }\n        tail.next = if l1.is_some() { l1 } else { l2 };\n        dummy.next\n    }\n}',
+    },
+    testCases: [
+      { input: '[1,2,4]\n[1,3,4]', output: '[1,1,2,3,4,4]', isHidden: false, points: 1, description: 'Example 1' },
+      { input: '[]\n[]', output: '[]', isHidden: false, points: 1, description: 'Both empty' },
+      { input: '[]\n[0]', output: '[0]', isHidden: false, points: 1, description: 'One empty' },
+      { input: '[1,2,3]\n[4,5,6]', output: '[1,2,3,4,5,6]', isHidden: true, points: 1, description: 'Non-overlapping' },
+      { input: '[1,1,1]\n[1,1,1]', output: '[1,1,1,1,1,1]', isHidden: true, points: 1, description: 'All same values' },
+    ],
+    constraints: 'The number of nodes in both lists is in the range [0, 50].\n-100 <= Node.val <= 100\nBoth list1 and list2 are sorted in non-decreasing order.',
+    timeLimit: 5000,
+    memoryLimit: 256,
+    explanation: 'Use a dummy head and iterate through both lists, always attaching the smaller node. O(n+m) time, O(1) space (excluding output).',
+    isPublished: true,
+    isActive: true,
+  },
+  {
+    title: 'Maximum Subarray',
+    slug: 'maximum-subarray',
+    description: `Given an integer array nums, find the subarray with the largest sum, and return its sum.
+
+A subarray is a contiguous non-empty sequence of elements within an array.`,
+    difficulty: 'medium',
+    tags: ['array', 'dynamic-programming', 'divide-and-conquer'],
+    category: 'dynamic-programming',
+    companies: ['Google', 'Amazon', 'Microsoft', 'LinkedIn', 'Apple'],
+    starterCode: {
+      python: 'class Solution:\n    def maxSubArray(self, nums: List[int]) -> int:\n        # Write your solution here\n        pass',
+      javascript: 'var maxSubArray = function(nums) {\n    // Write your solution here\n};',
+      typescript: 'function maxSubArray(nums: number[]): number {\n    // Write your solution here\n    return 0;\n}',
+      java: 'class Solution {\n    public int maxSubArray(int[] nums) {\n        // Write your solution here\n        return 0;\n    }\n}',
+      go: 'func maxSubArray(nums []int) int {\n    // Write your solution here\n    return 0\n}',
+      cpp: 'class Solution {\npublic:\n    int maxSubArray(vector<int>& nums) {\n        // Write your solution here\n        return 0;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn max_sub_array(nums: Vec<i32>) -> i32 {\n        // Write your solution here\n        0\n    }\n}',
+    },
+    solution: {
+      python: 'class Solution:\n    def maxSubArray(self, nums: List[int]) -> int:\n        max_sum = current_sum = nums[0]\n        for num in nums[1:]:\n            current_sum = max(num, current_sum + num)\n            max_sum = max(max_sum, current_sum)\n        return max_sum',
+      javascript: 'var maxSubArray = function(nums) {\n    let maxSum = nums[0];\n    let currentSum = nums[0];\n    for (let i = 1; i < nums.length; i++) {\n        currentSum = Math.max(nums[i], currentSum + nums[i]);\n        maxSum = Math.max(maxSum, currentSum);\n    }\n    return maxSum;\n};',
+      typescript: 'function maxSubArray(nums: number[]): number {\n    let maxSum = nums[0];\n    let currentSum = nums[0];\n    for (let i = 1; i < nums.length; i++) {\n        currentSum = Math.max(nums[i], currentSum + nums[i]);\n        maxSum = Math.max(maxSum, currentSum);\n    }\n    return maxSum;\n}',
+      java: 'class Solution {\n    public int maxSubArray(int[] nums) {\n        int maxSum = nums[0];\n        int currentSum = nums[0];\n        for (int i = 1; i < nums.length; i++) {\n            currentSum = Math.max(nums[i], currentSum + nums[i]);\n            maxSum = Math.max(maxSum, currentSum);\n        }\n        return maxSum;\n    }\n}',
+      go: 'func maxSubArray(nums []int) int {\n    maxSum := nums[0]\n    currentSum := nums[0]\n    for i := 1; i < len(nums); i++ {\n        if currentSum+nums[i] > nums[i] {\n            currentSum += nums[i]\n        } else {\n            currentSum = nums[i]\n        }\n        if currentSum > maxSum {\n            maxSum = currentSum\n        }\n    }\n    return maxSum\n}',
+      cpp: 'class Solution {\npublic:\n    int maxSubArray(vector<int>& nums) {\n        int maxSum = nums[0];\n        int currentSum = nums[0];\n        for (int i = 1; i < nums.size(); i++) {\n            currentSum = max(nums[i], currentSum + nums[i]);\n            maxSum = max(maxSum, currentSum);\n        }\n        return maxSum;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn max_sub_array(nums: Vec<i32>) -> i32 {\n        let mut max_sum = nums[0];\n        let mut current_sum = nums[0];\n        for &num in nums.iter().skip(1) {\n            current_sum = current_sum.max(current_sum + num);\n            max_sum = max_sum.max(current_sum);\n        }\n        max_sum\n    }\n}',
+    },
+    testCases: [
+      { input: '[-2,1,-3,4,-1,2,1,-5,4]', output: '6', isHidden: false, points: 1, description: 'Example 1' },
+      { input: '[1]', output: '1', isHidden: false, points: 1, description: 'Single element' },
+      { input: '[5,4,-1,7,8]', output: '23', isHidden: false, points: 1, description: 'All positive' },
+      { input: '[-1,-2,-3,-4]', output: '-1', isHidden: true, points: 1, description: 'All negative' },
+      { input: '[1,2,3,4,5]', output: '15', isHidden: true, points: 1, description: 'All positive increasing' },
+    ],
+    constraints: '1 <= nums.length <= 10^5\n-10^4 <= nums[i] <= 10^4',
+    timeLimit: 5000,
+    memoryLimit: 256,
+    explanation: "Kadane's algorithm: keep track of max sum ending at current position. Either extend previous subarray or start new. O(n) time, O(1) space.",
+    isPublished: true,
+    isActive: true,
+  },
+  {
+    title: 'Climbing Stairs',
+    slug: 'climbing-stairs',
+    description: `You are climbing a staircase. It takes n steps to reach the top.
+
+Each time you can either climb 1 or 2 steps. In how many distinct ways can you climb to the top?`,
+    difficulty: 'easy',
+    tags: ['dynamic-programming', 'math'],
+    category: 'dynamic-programming',
+    companies: ['Google', 'Amazon', 'Microsoft', 'Apple', 'Adobe'],
+    starterCode: {
+      python: 'class Solution:\n    def climbStairs(self, n: int) -> int:\n        # Write your solution here\n        pass',
+      javascript: 'var climbStairs = function(n) {\n    // Write your solution here\n};',
+      typescript: 'function climbStairs(n: number): number {\n    // Write your solution here\n    return 0;\n}',
+      java: 'class Solution {\n    public int climbStairs(int n) {\n        // Write your solution here\n        return 0;\n    }\n}',
+      go: 'func climbStairs(n int) int {\n    // Write your solution here\n    return 0\n}',
+      cpp: 'class Solution {\npublic:\n    int climbStairs(int n) {\n        // Write your solution here\n        return 0;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn climb_stairs(n: i32) -> i32 {\n        // Write your solution here\n        0\n    }\n}',
+    },
+    solution: {
+      python: 'class Solution:\n    def climbStairs(self, n: int) -> int:\n        if n <= 2:\n            return n\n        a, b = 1, 2\n        for _ in range(3, n + 1):\n            a, b = b, a + b\n        return b',
+      javascript: 'var climbStairs = function(n) {\n    if (n <= 2) return n;\n    let a = 1, b = 2;\n    for (let i = 3; i <= n; i++) {\n        [a, b] = [b, a + b];\n    }\n    return b;\n};',
+      typescript: 'function climbStairs(n: number): number {\n    if (n <= 2) return n;\n    let a = 1, b = 2;\n    for (let i = 3; i <= n; i++) {\n        [a, b] = [b, a + b];\n    }\n    return b;\n}',
+      java: 'class Solution {\n    public int climbStairs(int n) {\n        if (n <= 2) return n;\n        int a = 1, b = 2;\n        for (int i = 3; i <= n; i++) {\n            int temp = a + b;\n            a = b;\n            b = temp;\n        }\n        return b;\n    }\n}',
+      go: 'func climbStairs(n int) int {\n    if n <= 2 {\n        return n\n    }\n    a, b := 1, 2\n    for i := 3; i <= n; i++ {\n        a, b = b, a+b\n    }\n    return b\n}',
+      cpp: 'class Solution {\npublic:\n    int climbStairs(int n) {\n        if (n <= 2) return n;\n        int a = 1, b = 2;\n        for (int i = 3; i <= n; i++) {\n            int temp = a + b;\n            a = b;\n            b = temp;\n        }\n        return b;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn climb_stairs(n: i32) -> i32 {\n        if n <= 2 {\n            return n;\n        }\n        let (mut a, mut b) = (1, 2);\n        for _ in 3..=n {\n            let temp = a + b;\n            a = b;\n            b = temp;\n        }\n        b\n    }\n}',
+    },
+    testCases: [
+      { input: '2', output: '2', isHidden: false, points: 1, description: 'n=2' },
+      { input: '3', output: '3', isHidden: false, points: 1, description: 'n=3' },
+      { input: '1', output: '1', isHidden: false, points: 1, description: 'n=1' },
+      { input: '5', output: '8', isHidden: true, points: 1, description: 'n=5' },
+      { input: '10', output: '89', isHidden: true, points: 1, description: 'n=10' },
+    ],
+    constraints: '1 <= n <= 45',
+    timeLimit: 5000,
+    memoryLimit: 256,
+    explanation: 'This is the Fibonacci sequence. ways(n) = ways(n-1) + ways(n-2). Use iterative DP with O(1) space. O(n) time.',
+    isPublished: true,
+    isActive: true,
+  },
+  {
+    title: 'Longest Substring Without Repeating Characters',
+    slug: 'longest-substring-without-repeating-characters',
+    description: `Given a string s, find the length of the longest substring without repeating characters.`,
+    difficulty: 'medium',
+    tags: ['string', 'sliding-window', 'hash-table'],
+    category: 'strings',
+    companies: ['Google', 'Amazon', 'Microsoft', 'Facebook', 'Bloomberg'],
+    starterCode: {
+      python: 'class Solution:\n    def lengthOfLongestSubstring(self, s: str) -> int:\n        # Write your solution here\n        pass',
+      javascript: 'var lengthOfLongestSubstring = function(s) {\n    // Write your solution here\n};',
+      typescript: 'function lengthOfLongestSubstring(s: string): number {\n    // Write your solution here\n    return 0;\n}',
+      java: 'class Solution {\n    public int lengthOfLongestSubstring(String s) {\n        // Write your solution here\n        return 0;\n    }\n}',
+      go: 'func lengthOfLongestSubstring(s string) int {\n    // Write your solution here\n    return 0\n}',
+      cpp: 'class Solution {\npublic:\n    int lengthOfLongestSubstring(string s) {\n        // Write your solution here\n        return 0;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn length_of_longest_substring(s: String) -> i32 {\n        // Write your solution here\n        0\n    }\n}',
+    },
+    solution: {
+      python: 'class Solution:\n    def lengthOfLongestSubstring(self, s: str) -> int:\n        char_index = {}\n        left = 0\n        max_len = 0\n        for right, char in enumerate(s):\n            if char in char_index and char_index[char] >= left:\n                left = char_index[char] + 1\n            char_index[char] = right\n            max_len = max(max_len, right - left + 1)\n        return max_len',
+      javascript: 'var lengthOfLongestSubstring = function(s) {\n    const map = new Map();\n    let left = 0, maxLen = 0;\n    for (let right = 0; right < s.length; right++) {\n        const char = s[right];\n        if (map.has(char) && map.get(char) >= left) {\n            left = map.get(char) + 1;\n        }\n        map.set(char, right);\n        maxLen = Math.max(maxLen, right - left + 1);\n    }\n    return maxLen;\n};',
+      typescript: 'function lengthOfLongestSubstring(s: string): number {\n    const map = new Map<string, number>();\n    let left = 0, maxLen = 0;\n    for (let right = 0; right < s.length; right++) {\n        const char = s[right];\n        if (map.has(char) && map.get(char)! >= left) {\n            left = map.get(char)! + 1;\n        }\n        map.set(char, right);\n        maxLen = Math.max(maxLen, right - left + 1);\n    }\n    return maxLen;\n}',
+      java: 'class Solution {\n    public int lengthOfLongestSubstring(String s) {\n        Map<Character, Integer> map = new HashMap<>();\n        int left = 0, maxLen = 0;\n        for (int right = 0; right < s.length(); right++) {\n            char c = s.charAt(right);\n            if (map.containsKey(c) && map.get(c) >= left) {\n                left = map.get(c) + 1;\n            }\n            map.put(c, right);\n            maxLen = Math.max(maxLen, right - left + 1);\n        }\n        return maxLen;\n    }\n}',
+      go: 'func lengthOfLongestSubstring(s string) int {\n    m := make(map[byte]int)\n    left, maxLen := 0, 0\n    for right := 0; right < len(s); right++ {\n        c := s[right]\n        if idx, ok := m[c]; ok && idx >= left {\n            left = idx + 1\n        }\n        m[c] = right\n        if right-left+1 > maxLen {\n            maxLen = right - left + 1\n        }\n    }\n    return maxLen\n}',
+      cpp: 'class Solution {\npublic:\n    int lengthOfLongestSubstring(string s) {\n        unordered_map<char, int> map;\n        int left = 0, maxLen = 0;\n        for (int right = 0; right < s.size(); right++) {\n            char c = s[right];\n            if (map.count(c) && map[c] >= left) {\n                left = map[c] + 1;\n            }\n            map[c] = right;\n            maxLen = max(maxLen, right - left + 1);\n        }\n        return maxLen;\n    }\n};',
+      rust: 'impl Solution {\n    pub fn length_of_longest_substring(s: String) -> i32 {\n        use std::collections::HashMap;\n        let mut map = HashMap::new();\n        let mut left = 0;\n        let mut max_len = 0;\n        for (right, c) in s.chars().enumerate() {\n            if let Some(&idx) = map.get(&c) {\n                if idx >= left {\n                    left = idx + 1;\n                }\n            }\n            map.insert(c, right);\n            max_len = max_len.max(right - left + 1);\n        }\n        max_len as i32\n    }\n}',
+    },
+    testCases: [
+      { input: 'abcabcbb', output: '3', isHidden: false, points: 1, description: 'Example 1' },
+      { input: 'bbbbb', output: '1', isHidden: false, points: 1, description: 'All same' },
+      { input: 'pwwkew', output: '3', isHidden: false, points: 1, description: 'Example 2' },
+      { input: '', output: '0', isHidden: true, points: 1, description: 'Empty string' },
+      { input: 'abcdef', output: '6', isHidden: true, points: 1, description: 'All unique' },
+    ],
+    constraints: '0 <= s.length <= 5 * 10^4\ns consists of English letters, digits, symbols and spaces.',
+    timeLimit: 5000,
+    memoryLimit: 256,
+    explanation: 'Sliding window with hash map tracking last seen index of each character. When duplicate found, move left pointer past it. O(n) time, O(min(m,n)) space.',
+    isPublished: true,
+    isActive: true,
+  },
 ];
 
-const QUESTIONS_PART2 = [
-  q('Maximum Subarray', 'easy', 'dynamic-programming', ['kadane'], ['Amazon', 'Google'],
-    'Input: n, then n integers. Print the largest sum of any contiguous subarray.',
-    '1 <= n <= 10^5',
-    [['9 -2 1 -3 4 -1 2 1 -5 4', '6', false, 15], ['1 -1', '1', false, 10], ['5 -3 -1 -2 -4 -5', '-1', true, 15]],
-    'Kadane: extend the running sum or restart at the current element.'),
-  q('Valid Parentheses', 'easy', 'strings', ['stack'], ['Amazon', 'Meta'],
-    'Input: a string of brackets ()[]{}. Print "true" if it is valid, else "false".',
-    '',
-    [['()[]{}', 'true', false, 10], ['(]', 'false', false, 10], ['([)]', 'false', true, 10], ['{[]}', 'true', true, 10]],
-    'Push opens on a stack; each close must match the top.'),
-  q('Merge Sorted Arrays', 'easy', 'sorting', ['two-pointers'], ['Microsoft'],
-    'Input: n, m, then n sorted integers, then m sorted integers. Print the merged sorted array, space-separated.',
-    '',
-    [['3 3 1 3 5 2 4 6', '1 2 3 4 5 6', false, 10], ['1 1 2 1', '1 2', false, 10], ['2 2 1 3 2 4', '1 2 3 4', true, 10]],
-    'Two-pointer merge like merge sort.'),
-  q('First Unique Character', 'easy', 'strings', ['hash-map'], ['Amazon'],
-    'Input: a word. Print the index of the first non-repeating character, or -1 if none.',
-    '',
-    [['leetcode', '0', false, 10], ['aabb', '-1', false, 10], ['loveleetcode', '2', true, 10]],
-    'Count frequencies, then scan again for the first char with count 1.'),
-  q('Reverse Integer', 'easy', 'math', [], ['Apple', 'Bloomberg'],
-    'Input: an integer. Print it with digits reversed; if it overflows a 32-bit signed integer, print 0.',
-    '',
-    [['123', '321', false, 10], ['-123', '-321', false, 10], ['1534236469', '0', true, 15], ['120', '21', true, 10]],
-    'Pop digits with %10 and push with *10; check the 32-bit range before multiplying.'),
-  q('Climbing Stairs', 'easy', 'dynamic-programming', ['fibonacci'], ['Google', 'Adobe'],
-    'Input: n. You can climb 1 or 2 steps. Print the number of distinct ways to reach step n.',
-    '1 <= n <= 45',
-    [['5', '8', false, 10], ['2', '2', false, 5], ['45', '1836311903', true, 15]],
-    'Fibonacci: ways(n) = ways(n-1) + ways(n-2).'),
-  q('Binary Search', 'easy', 'searching', ['binary-search'], ['Everywhere'],
-    'Input: n, then n sorted integers, then target. Print the index of target or -1.',
-    '',
-    [['5 1 3 5 7 9 7', '3', false, 10], ['3 10 20 30 25', '-1', false, 10], ['1 42 42', '0', true, 10]],
-    'Standard binary search on the sorted array.'),
-  q('Count Primes', 'easy', 'math', ['sieve'], ['Amazon'],
-    'Input: n. Print the number of primes strictly less than n.',
-    '0 <= n <= 5*10^6',
-    [['10', '4', false, 15], ['0', '0', false, 5], ['1', '0', false, 5], ['100', '25', true, 15]],
-    'Sieve of Eratosthenes.'),
-  q('Missing Number', 'easy', 'arrays', ['math', 'xor'], ['Amazon'],
-    'Input: n, then n distinct integers from 0..n. Print the missing number.',
-    '',
-    [['3 3 0 1', '2', false, 10], ['1 0', '1', false, 5], ['2 1 2', '0', true, 10]],
-    'Expected sum n(n+1)/2 minus actual sum, or XOR all.'),
-  q('Best Time to Buy and Sell Stock', 'easy', 'dynamic-programming', ['greedy'], ['Amazon', 'Meta'],
-    'Input: n, then n prices. Print the maximum profit from one buy and one sell (0 if none).',
-    '',
-    [['6 7 1 5 3 6 4', '5', false, 10], ['5 7 6 4 3 1', '0', false, 10], ['3 2 4 1', '2', true, 10]],
-    'Track min price so far; profit = price - min.'),
-];
+async function seed() {
+  try {
+    await mongoose.connect(MONGO_URI);
+    console.log('Connected to MongoDB');
 
-// ── Questions part 1 (easy) ────────────────────────────────────────────────
-const QUESTIONS_PART1 = [
-  q('Two Sum', 'easy', 'arrays', ['hash-map'], ['Google', 'Amazon'],
-    'Input: n, then n integers (the array), then target. Print the 0-based indices of the two numbers that add up to target, space-separated.',
-    'Exactly one solution exists; do not reuse an element.',
-    [['4 2 7 11 15 9', '0 1', false, 10], ['3 3 2 4 6', '1 2', false, 10], ['5 1 5 3 5 8 6', '0 1', true, 10]],
-    'Use a hash map of value-to-index; for each element check if target - element was seen.'),
-  q('Reverse String', 'easy', 'strings', ['two-pointers'], ['Amazon'],
-    'Input: a single word. Print it reversed.',
-    '1 <= length <= 10^5',
-    [['hello', 'olleh', false, 5], ['a', 'a', false, 5], ['Interview', 'weivretnI', true, 5]],
-    'Two pointers from both ends swapping, or reverse the string in your language.'),
-  q('Valid Palindrome', 'easy', 'strings', ['two-pointers'], ['Meta', 'Microsoft'],
-    'Input: a phrase as one token (symbols removed, case-insensitive letters/digits only). Print "true" if it is a palindrome, else "false".',
-    '',
-    [['AmanaplanacanalPanama', 'true', false, 10], ['raceacar', 'false', false, 10], ['0P', 'false', true, 10]],
-    'Filter to alphanumeric lowercase, then two-pointer compare.'),
-];
+    // Clear existing
+    await CodingQuestion.deleteMany({});
+    console.log('Cleared existing questions');
 
-// ── Questions part 4 (medium) ──────────────────────────────────────────────
-const QUESTIONS_PART4 = [
-  q('Product of Array Except Self', 'medium', 'arrays', ['prefix-sum'], ['Amazon', 'Meta'],
-    'Input: n, then n integers. Print the product of all elements except self for each position, space-separated.',
-    'Division is not allowed; O(n) expected.',
-    [['4 1 2 3 4', '24 12 8 6', false, 20], ['3 -1 1 0', '0 0 -1', false, 20], ['2 5 3', '3 5', true, 20]],
-    'Prefix products left-to-right, then suffix products right-to-left.'),
-  q('Group Anagrams', 'medium', 'strings', ['hash-map'], ['Amazon', 'Meta', 'Bloomberg'],
-    'Input: n, then n words. Group the anagrams. Print each group on its own line (words space-separated, groups in order of first appearance).',
-    '',
-    [['6 eat tea tan ate nat bat', 'eat tea ate tan nat bat', false, 25], ['2 abc bca', 'abc bca', false, 15], ['3 add dad da', 'add da dad', true, 25]],
-    'Key each word by its sorted letters; group with a hash map.'),
-  q('Longest Substring Without Repeating Characters', 'medium', 'strings', ['sliding-window'], ['Amazon', 'Meta', 'Google'],
-    'Input: a string. Print the length of the longest substring without repeating characters.',
-    '',
-    [['abcabcbb', '3', false, 25], ['bbbbb', '1', false, 15], ['pwwkew', '3', false, 20], ['dvdf', '3', true, 25]],
-    'Sliding window with a last-seen-index map; move the left edge past duplicates.'),
-  q('Container With Most Water', 'medium', 'arrays', ['two-pointers'], ['Amazon', 'Google'],
-    'Input: n, then n heights. Print the maximum water area between two lines.',
-    '',
-    [['9 1 8 6 2 5 4 8 3 7', '49', false, 25], ['2 1 1', '1', false, 15], ['4 4 3 2 7', '9', true, 25]],
-    'Two pointers at the ends; always move the shorter line inward.'),
-  q('3Sum', 'medium', 'arrays', ['two-pointers', 'sorting'], ['Meta', 'Amazon', 'Adobe'],
-    'Input: n, then n integers. Count the number of unique triplets that sum to 0. Print the count.',
-    '',
-    [['6 -1 0 1 2 -1 -4', '2', false, 30], ['3 0 0 0', '1', false, 20], ['5 -2 -2 -1 3 4', '2', true, 30]],
-    'Sort, fix one element, two-pointer scan; skip duplicate values.'),
-  q('Rotate Image', 'medium', 'arrays', ['matrix'], ['Microsoft', 'Amazon'],
-    'Input: n, then n*n integers (row-major). Rotate the matrix 90 degrees clockwise and print it row by row.',
-    'In-place if possible.',
-    [['2 1 2 3 4', '3 1\\n4 2', false, 25], ['1 5', '5', false, 10], ['3 1 2 3 4 5 6 7 8 9', '7 4 1\\n8 5 2\\n9 6 3', true, 30]],
-    'Transpose, then reverse each row.'),
-  q('Coin Change', 'medium', 'dynamic-programming', ['dp'], ['Amazon', 'Meta', 'Google'],
-    'Input: k, then k coin values, then amount. Print the fewest coins to make amount, or -1.',
-    '',
-    [['3 1 2 5 11', '3', false, 30], ['2 2 3', '-1', false, 20], ['1 1 0', '0', false, 15], ['3 1 5 7 18', '4', true, 30]],
-    'Bottom-up DP: dp[a] = min(dp[a], dp[a-coin]+1).'),
-  q('Unique Paths', 'medium', 'dynamic-programming', ['dp', 'combinatorics'], ['Google', 'Meta'],
-    'Input: m n (grid rows, columns). Robot moves only right or down. Print the number of unique paths.',
-    '',
-    [['3 7', '28', false, 25], ['2 2', '2', false, 15], ['3 3', '6', true, 25]],
-    'dp[i][j] = dp[i-1][j] + dp[i][j-1]; or C(m+n-2, m-1).'),
-  q('House Robber', 'medium', 'dynamic-programming', ['dp'], ['Amazon', 'Adobe'],
-    'Input: n, then n money amounts. Cannot rob adjacent houses. Print the max loot.',
-    '',
-    [['5 2 7 9 3 1', '12', false, 25], ['2 1 2', '2', false, 15], ['4 2 1 1 2', '4', true, 25]],
-    'Two rolling variables: rob vs skip.'),
-  q('Number of Islands', 'medium', 'graphs', ['dfs', 'bfs'], ['Amazon', 'Google', 'Meta'],
-    'Input: m n, then m rows of 0/1 grid digits (no spaces). Print the number of islands.',
-    '',
-    [['4 5 11110 11010 11000 00000', '1', false, 30], ['2 2 10 01', '2', false, 20], ['3 3 101 010 101', '5', true, 30]],
-    'Flood-fill (DFS/BFS) each unvisited land cell.'),
-];
+    // Insert new
+    const inserted = await CodingQuestion.insertMany(questions);
+    console.log(`Inserted ${inserted.length} coding questions`);
 
-// ── Questions part 5 (hard) ────────────────────────────────────────────────
-const QUESTIONS_PART5 = [
-  q('Median of Two Sorted Arrays', 'hard', 'searching', ['binary-search'], ['Google', 'Amazon', 'Meta'],
-    'Input: n, m, then n sorted integers, then m sorted integers. Print the median of the two combined sorted arrays (as a decimal if fractional, e.g. 2.5).',
-    'O(log(n+m)) expected.',
-    [['2 2 1 3 2 4', '2.5', false, 40], ['2 1 1 3 2', '2', false, 25], ['1 1 1 1 2', '1.5', true, 40]],
-    'Binary search the partition of the smaller array so the halves are balanced.'),
-  q('Trapping Rain Water', 'hard', 'arrays', ['two-pointers'], ['Amazon', 'Google', 'Meta'],
-    'Input: n, then n elevation heights. Print the total trapped rainwater.',
-    '',
-    [['12 0 1 0 2 1 0 1 3 2 1 2 1', '6', false, 40], ['6 4 2 0 3 2 5', '9', false, 30], ['3 3 0 3', '3', true, 40]],
-    'Two pointers with running left/right max; water at each bar is min(lmax,rmax)-height.'),
-  q('Edit Distance', 'hard', 'dynamic-programming', ['dp'], ['Google', 'Microsoft'],
-    'Input: two words. Print the minimum number of single-character edits (insert/delete/replace) to convert word1 to word2.',
-    '',
-    [['horse ros', '3', false, 40], ['intention execution', '5', false, 30], ['abc abc', '0', true, 30]],
-    'Classic 2D DP on prefixes of both words.'),
-  q('Longest Increasing Subsequence', 'medium', 'dynamic-programming', ['dp', 'binary-search'], ['Microsoft', 'Amazon'],
-    'Input: n, then n integers. Print the length of the longest strictly increasing subsequence.',
-    '',
-    [['8 10 9 2 5 3 7 101 18', '4', false, 35], ['4 0 1 0 3', '2', false, 25], ['6 7 7 7 7 7 7', '1', true, 35]],
-    'Patience sorting with binary search — O(n log n).'),
-  q('Word Break', 'medium', 'dynamic-programming', ['dp'], ['Amazon', 'Meta'],
-    'Input: k, then k dictionary words, then a sentence (single token). Print "true" if the sentence can be segmented into dictionary words.',
-    '',
-    [['2 apple pie applepie', 'true', false, 30], ['2 apple pie applebanana', 'false', false, 20], ['3 cat sand catsand catsanddog', 'true', true, 30]],
-    'dp[i] = any j where dp[j] and s[j..i) is in the dictionary.'),
-  q('Largest Rectangle in Histogram', 'hard', 'stacks', ['monotonic-stack'], ['Amazon', 'Bloomberg'],
-    'Input: n, then n bar heights. Print the largest rectangle area in the histogram.',
-    '',
-    [['6 2 1 5 6 2 3', '10', false, 40], ['2 2 4', '4', false, 25], ['1 5', '5', true, 40]],
-    'Monotonic stack of increasing heights; pop and compute areas.'),
-  q('Merge K Sorted Arrays', 'hard', 'sorting', ['heap'], ['Amazon', 'Meta', 'Microsoft'],
-    'Input: k, then for each array its size n followed by n sorted integers. Print all values merged in sorted order, space-separated.',
-    '',
-    [['3 3 1 4 5 3 2 6 7 2 3 9', '1 2 3 3 4 5 6 7 9', false, 40], ['2 2 1 3 1 2', '1 2 3', false, 25], ['1 1 7', '7', true, 25]],
-    'Min-heap of (value, array, index) — O(N log k).'),
-  q('Course Schedule', 'medium', 'graphs', ['topological-sort'], ['Google', 'Amazon'],
-    'Input: numCourses, p, then p prerequisite pairs [a, b] meaning b before a (0-indexed). Print "true" if all courses can be finished.',
-    '',
-    [['2 1 1 0', 'true', false, 30], ['2 1 0 1', 'false', false, 20], ['4 3 0 1 1 2 2 3', 'true', true, 30]],
-    'Topological sort (Kahn BFS) — finishable iff the graph is acyclic.'),
-  q('Kth Largest Element', 'medium', 'sorting', ['heap', 'quickselect'], ['Meta', 'Amazon'],
-    'Input: n k, then n integers. Print the k-th largest element.',
-    '',
-    [['6 2 3 2 1 5 6 4', '5', false, 30], ['3 1 3 1 2', '3', false, 20], ['5 4 7 10 4 3 20 15', '4', true, 30]],
-    'Sort, or maintain a min-heap of size k.'),
-  q('LRU Cache Hit Count', 'hard', 'design', ['lru', 'linked-list'], ['Meta', 'Amazon', 'Bloomberg'],
-    'Input: capacity, q, then q operations each "get x" or "put x". Track a single integer value per key. Print the number of GET operations that returned a cached (non-evicted) key.',
-    '',
-    [['2 5 put 1 put 2 get 1 get 3 put 3', '1', false, 40], ['1 4 put 5 get 5 get 6 get 5', '2', false, 30], ['2 6 put 1 put 2 get 1 put 3 get 2 get 1', '2', true, 40]],
-    'Simulate with an ordered map / linked-hash set; count hits on get.'),
-];
-
-// ── Runner ─────────────────────────────────────────────────────────────────
-const ALL_QUESTIONS = [
-  ...QUESTIONS_PART1, ...QUESTIONS_PART3, ...QUESTIONS_PART2,
-  ...QUESTIONS_PART4, ...QUESTIONS_PART5,
-];
-
-async function main() {
-  const uri = process.env.MONGO_URI || 'mongodb://localhost:27017/hireadyDB';
-  console.log('Connecting to', uri);
-  await mongoose.connect(uri);
-
-  let inserted = 0, updated = 0, skipped = 0;
-  for (const doc of ALL_QUESTIONS) {
-    try {
-      const res = await CodingQuestion.updateOne(
-        { slug: doc.slug },
-        { $setOnInsert: doc },
-        { upsert: true }
-      );
-      if (res.upsertedCount) inserted++;
-      else skipped++;
-    } catch (err) {
-      console.error(`✗ ${doc.title}: ${err.message}`);
+    for (const q of inserted) {
+      console.log(`  - ${q.title} (${q.difficulty}) [${q.category}]`);
     }
-  }
 
-  console.log(`\nDone: ${inserted} inserted, ${skipped} already existed, ${ALL_QUESTIONS.length} total in file.`);
-  await mongoose.disconnect();
-  process.exit(0);
+    process.exit(0);
+  } catch (error) {
+    console.error('Seed error:', error);
+    process.exit(1);
+  }
 }
 
-main().catch((err) => {
-  console.error('Seeding failed:', err);
-  process.exit(1);
-});
+seed();

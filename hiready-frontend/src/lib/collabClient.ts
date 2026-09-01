@@ -17,7 +17,14 @@ export interface CollabCursor {
 
 /** Derives the socket server root from the REST API base URL. */
 function socketUrl(): string {
-  return API_BASE_URL.replace(/\/api\/?$/, "");
+  try {
+    const u = new URL(API_BASE_URL);
+    // Strip /api and /api/... suffixes
+    u.pathname = u.pathname.replace(/\/api(\/.*)?\/?$/, "");
+    return u.origin + (u.pathname === "/" ? "" : u.pathname);
+  } catch {
+    return API_BASE_URL.replace(/\/api(\/.*)?\/?$/, "");
+  }
 }
 
 /** Extracts the JWT used for socket auth (same token as REST calls). */
@@ -35,6 +42,7 @@ export function connectCollab(sessionId: string, role: CollabRole): Socket {
     auth: { token: authToken() },
     transports: ["websocket", "polling"],
     reconnectionAttempts: 5,
+    timeout: 8000,
   });
 
   socket.on("connect", () => {

@@ -32,7 +32,6 @@ const codingSubmissionSchema = new mongoose.Schema({
   totalTests: { type: Number, default: 0 },
   score: { type: Number, default: 0 },
   executionTime: { type: Number, default: 0 },
-  // Per-case results — hidden-test outputs are masked before persisting
   testResults: [{
     input: String,
     expected: String,
@@ -40,6 +39,7 @@ const codingSubmissionSchema = new mongoose.Schema({
     passed: Boolean,
     executionTime: Number,
     error: String,
+    isHidden: { type: Boolean, default: false },
   }],
 }, {
   timestamps: true,

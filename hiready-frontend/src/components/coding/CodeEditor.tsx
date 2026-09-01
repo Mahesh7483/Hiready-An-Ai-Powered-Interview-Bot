@@ -3,20 +3,11 @@ import Editor from "@monaco-editor/react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Play, Pause, Square, ChevronDown, Copy, FilePlus, FileText, Terminal, X } from "lucide-react";
-import { toast } from "sonner";
+import { Loader2, Play, FileText } from "lucide-react";
 
-const DEFAULT_CODE = {
-  python: `def solve():\n    # Write your solution here\n    pass\n\nif __name__ == "__main__":\n    solve()`,
-  javascript: `function solve() {\n  // Write your solution here\n}\n\nsolve();`,
-  typescript: `function solve(): void {\n  // Write your solution here\n}\n\nsolve();`,
-  java: `import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        // Write your solution here\n    }\n}`,
-  go: `package main\n\nimport "fmt"\n\nfunc main() {\n    // Write your solution here\n}`,
-  cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    ios::sync_with_stdio(false);\n    cin.tie(nullptr);\n    // Write your solution here\n    return 0;\n}`,
-  rust: `fn main() {\n    // Write your solution here\n}`,
-};
+type LanguageKey = "python" | "javascript" | "typescript" | "java" | "go" | "cpp" | "rust";
 
-const LANGUAGE_CONFIG = {
+const LANGUAGE_CONFIG: Record<LanguageKey, { label: string; monaco: string; icon: string }> = {
   python: { label: "Python", monaco: "python", icon: "🐍" },
   javascript: { label: "JavaScript", monaco: "javascript", icon: "🟨" },
   typescript: { label: "TypeScript", monaco: "typescript", icon: "🔷" },
@@ -45,40 +36,36 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
   code,
   onChange,
   readOnly = false,
-  height = "400px",
+  theme: propTheme = "vs-dark",
+  height = "100%",
   showToolbar = true,
   onRun,
   onFormat,
   onCursorChange,
   running = false,
 }) => {
-  const editorRef = useRef(null);
+  const editorRef = useRef<import("monaco-editor").editor.IStandaloneCodeEditor | null>(null);
+  const cursorDisposableRef = useRef<{ dispose: () => void } | null>(null);
   const [mounted, setMounted] = useState(false);
   const [currentLanguage, setCurrentLanguage] = useState(language);
   const [fontSize, setFontSize] = useState(14);
-  const [theme, setTheme] = useState("vs-dark");
+  const [themeState, setThemeState] = useState(propTheme);
 
-  useEffect(() => {
-    setCurrentLanguage(language);
-  }, [language]);
-
+  useEffect(() => { setCurrentLanguage(language); }, [language]);
+  useEffect(() => { setThemeState(propTheme); }, [propTheme]);
   useEffect(() => {
     setMounted(true);
+    return () => {
+      if (cursorDisposableRef.current) {
+        cursorDisposableRef.current.dispose();
+        cursorDisposableRef.current = null;
+      }
+    };
   }, []);
 
   const handleEditorChange = useCallback((value: string | undefined) => {
-    if (value !== undefined) {
-      onChange(value);
-    }
+    if (value !== undefined) onChange(value);
   }, [onChange]);
-
-  const handleRun = () => {
-    if (onRun && !running) onRun();
-  };
-
-  const handleFormat = () => {
-    if (onFormat) onFormat();
-  };
 
   const handleFontSizeChange = (delta: number) => {
     setFontSize(prev => Math.max(10, Math.min(24, prev + delta)));
@@ -92,7 +79,9 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
     );
   }
 
-  const config = LANGUAGE_CONFIG[currentLanguage] || LANGUAGE_CONFIG.javascript;
+  const config =
+    (LANGUAGE_CONFIG as Record<string, { label: string; monaco: string; icon: string }>)[currentLanguage] ||
+    LANGUAGE_CONFIG.javascript;
 
   return (
     <div className="flex flex-col h-full w-full bg-background border border-border rounded-lg overflow-hidden">
@@ -103,29 +92,11 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             <Badge variant="outline" className="text-xs">{language}</Badge>
           </div>
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleFontSizeChange(-1)}
-              title="Decrease font size"
-              aria-label="Decrease font size"
-            >
-              <span className="text-xs">A-</span>
-            </Button>
+            <Button variant="outline" size="sm" onClick={() => handleFontSizeChange(-1)} aria-label="Decrease font size"><span className="text-xs">A-</span></Button>
             <span className="text-xs text-muted-foreground w-10 text-center">{fontSize}px</span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleFontSizeChange(1)}
-              title="Increase font size"
-              aria-label="Increase font size"
-            >
-              <span className="text-xs">A+</span>
-            </Button>
-            <Select value={theme} onValueChange={setTheme}>
-              <SelectTrigger className="w-[130px] h-8 text-xs">
-                <SelectValue placeholder="Theme" />
-              </SelectTrigger>
+            <Button variant="outline" size="sm" onClick={() => handleFontSizeChange(1)} aria-label="Increase font size"><span className="text-xs">A+</span></Button>
+            <Select value={themeState} onValueChange={(v) => setThemeState(v as typeof themeState)}>
+              <SelectTrigger className="w-[130px] h-8 text-xs"><SelectValue placeholder="Theme" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="vs-dark">Dark (VS)</SelectItem>
                 <SelectItem value="vs">Light (VS)</SelectItem>
@@ -133,35 +104,13 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
               </SelectContent>
             </Select>
             {onFormat && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFormat}
-                disabled={readOnly}
-                title="Format code"
-              >
-                <FileText className="w-4 h-4 mr-1" /> Format
+              <Button variant="outline" size="sm" onClick={onFormat} disabled={readOnly} title="Format code"><FileText className="w-4 h-4 mr-1" /> Format</Button>
+            )}
+            {onRun && (
+              <Button variant={running ? "destructive" : "default"} size="sm" onClick={running ? undefined : onRun} disabled={running} className="gap-1">
+                {running ? <><Loader2 className="w-4 h-4 animate-spin" /> Running...</> : <><Play className="w-4 h-4" /> Run</>}
               </Button>
             )}
-            <Button
-              variant={running ? "destructive" : "default"}
-              size="sm"
-              onClick={running ? undefined : handleRun}
-              disabled={running}
-              className="gap-1"
-            >
-              {running ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Running...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  Run
-                </>
-              )}
-            </Button>
           </div>
         </div>
       )}
@@ -170,25 +119,28 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
         <Editor
           onMount={(editor) => {
             editorRef.current = editor;
+            if (cursorDisposableRef.current) cursorDisposableRef.current.dispose();
             if (onCursorChange) {
-              editor.onDidChangeCursorPosition((e) => {
+              cursorDisposableRef.current = editor.onDidChangeCursorPosition((e) => {
                 onCursorChange({ line: e.position.lineNumber, column: e.position.column });
               });
             }
           }}
           height={height}
           language={config.monaco}
-          theme={theme}
+          theme={themeState}
           value={code}
           onChange={handleEditorChange}
           options={{
+            readOnly,
+            domReadOnly: readOnly,
             fontSize,
             lineNumbers: "on",
-            minimap: { enabled: true },
+            minimap: { enabled: false },
             automaticLayout: true,
             scrollBeyondLastLine: false,
             wordWrap: "on",
-            tabSize: language === "python" ? 4 : 2,
+            tabSize: currentLanguage === "python" ? 4 : 2,
             insertSpaces: true,
             bracketPairColorization: { enabled: true },
             guides: { bracketPairs: true },
@@ -196,25 +148,17 @@ export const CodeEditor: React.FC<CodeEditorProps> = ({
             smoothScrolling: true,
             cursorBlinking: "smooth",
             cursorSmoothCaretAnimation: "on",
-            renderWhitespace: "selection",
-            renderControlCharacters: true,
-            renderLineHighlightOnlyWhenFocus: false,
-            showFoldingControls: "always",
-            codeLens: false,
-            quickSuggestions: {
-              other: true,
-              comments: true,
-              strings: true,
-            },
+            contextmenu: false,
+            quickSuggestions: { other: true, comments: false, strings: false },
             suggestOnTriggerCharacters: true,
             acceptSuggestionOnEnter: "on",
             tabCompletion: "on",
             parameterHints: { enabled: true },
-            hover: { enabled: "on" },
-            formatOnPaste: true,
-            formatOnType: true,
+            formatOnPaste: false,
+            formatOnType: false,
           }}
         />
+        {readOnly && <div className="absolute inset-0 bg-background/10 pointer-events-none" aria-hidden />}
       </div>
     </div>
   );

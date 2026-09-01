@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileUp, MessageSquare, ArrowRight, FileText, Mic, BarChart3, Brain, History, Trophy, Flame, Loader2, Target } from "lucide-react";
+import { FileUp, MessageSquare, ArrowRight, FileText, Mic, Brain, Flame, Loader2, Target, TerminalSquare, ClipboardList } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -136,18 +136,33 @@ const Dashboard = () => {
                 style={{ width: `${readiness}%` }}
               />
             </div>
-            <div className="grid grid-cols-3 gap-4 mt-6 text-center">
-              <Link to="/my-resumes" className="block group">
-                <p className="text-sm text-primary-foreground/80 mb-1 group-hover:text-primary-foreground">Resumes analyzed</p>
-                <p className="text-xs font-bold text-primary-foreground">{resumeHistory.length}</p>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+              {([
+                ["Resume", readinessData?.resume],
+                ["Interview", readinessData?.interview],
+                ["Coding", readinessData?.coding],
+                ["Aptitude", readinessData?.aptitude],
+              ] as const).map(([label, pillar]) => (
+                <div key={label}>
+                  <div className="flex justify-between text-xs text-primary-foreground/80 mb-1.5">
+                    <span>{label}</span>
+                    <span className="font-semibold">{pillar?.score != null ? `${pillar.score}%` : "—"}</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-primary-foreground/20 overflow-hidden">
+                    <div className="h-full bg-primary-foreground rounded-full transition-all duration-700" style={{ width: `${pillar?.score ?? 0}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 mt-5 text-sm text-primary-foreground/80">
+              <Link to="/my-resumes" className="hover:text-primary-foreground underline-offset-2 hover:underline">
+                {resumeHistory.length} resume{resumeHistory.length === 1 ? "" : "s"} analyzed
               </Link>
-              <Link to="/interview-history" className="block group">
-                <p className="text-sm text-primary-foreground/80 mb-1 group-hover:text-primary-foreground">Interviews done</p>
-                <p className="text-xs font-bold text-primary-foreground">{totalInterviews}</p>
+              <Link to="/interview-history" className="hover:text-primary-foreground underline-offset-2 hover:underline">
+                {totalInterviews} interview{totalInterviews === 1 ? "" : "s"} done
               </Link>
-              <Link to="/aptitude-dashboard" className="block group">
-                <p className="text-sm text-primary-foreground/80 mb-1 group-hover:text-primary-foreground">Aptitude tests</p>
-                <p className="text-xs font-bold text-primary-foreground">{aptitude?.totalTests ?? 0}</p>
+              <Link to="/aptitude/dashboard" className="hover:text-primary-foreground underline-offset-2 hover:underline">
+                {aptitude?.totalTests ?? 0} aptitude test{(aptitude?.totalTests ?? 0) === 1 ? "" : "s"}
               </Link>
             </div>
           </CardContent>
@@ -171,28 +186,93 @@ const Dashboard = () => {
           </div>
         )}
 
-        {/* Action Cards */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* Training & Practice — practice tools grouped together */}
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-4">
+          <Brain className="w-4 h-4" /> Training &amp; Practice
+        </h2>
+        <div className="grid md:grid-cols-3 gap-6 mb-8">
+          <Card className="border border-border shadow-md hover:shadow-lg transition-shadow flex flex-col">
+            <CardHeader className="flex-1">
+              <div className="w-12 h-12 rounded-lg bg-warning/10 flex items-center justify-center mb-4">
+                <Brain className="w-6 h-6 text-warning" />
+              </div>
+              <CardTitle>Aptitude Practice</CardTitle>
+              <CardDescription>Timed tests, topic drills & daily streaks</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Link to="/aptitude" className="block">
+                <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
+                  Take Test <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </Link>
+              <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
+                <Link to="/leaderboard" className="hover:text-foreground underline-offset-2 hover:underline">Leaderboard</Link>
+                <Link to="/aptitude/notebook" className="hover:text-foreground underline-offset-2 hover:underline">Wrong Answers</Link>
+                <Link to="/aptitude/dashboard" className="hover:text-foreground underline-offset-2 hover:underline">My Stats</Link>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border shadow-md hover:shadow-lg transition-shadow flex flex-col">
+            <CardHeader className="flex-1">
+              <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
+                <TerminalSquare className="w-6 h-6 text-primary" />
+              </div>
+              <CardTitle>Technical Round</CardTitle>
+              <CardDescription>Coding questions with run & submit feedback</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Link to="/coding-interview" className="block">
+                <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
+                  Start Practice <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+
+          <Card className="border border-border shadow-md hover:shadow-lg transition-shadow flex flex-col">
+            <CardHeader className="flex-1">
+              <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mb-4">
+                <ClipboardList className="w-6 h-6 text-accent" />
+              </div>
+              <CardTitle>Assessments</CardTitle>
+              <CardDescription>Proctored, multi-section evaluations</CardDescription>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <Link to="/assessments" className="block">
+                <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
+                  Take Assessment <ArrowRight className="ml-2 w-4 h-4" />
+                </Button>
+              </Link>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Career Tools */}
+        <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-4">
+          <FileText className="w-4 h-4" /> Career Tools
+        </h2>
+        <div className="grid md:grid-cols-2 gap-6 mb-8">
           <Card className="border border-border shadow-md hover:shadow-lg transition-shadow flex flex-col">
             <CardHeader className="flex-1">
               <div className="w-12 h-12 rounded-lg bg-accent/10 flex items-center justify-center mb-4">
                 <FileUp className="w-6 h-6 text-accent" />
               </div>
-              <CardTitle>Analyze Resume</CardTitle>
+              <CardTitle>Resume Analysis</CardTitle>
               <CardDescription>ATS scoring, keyword gaps & AI rewrites</CardDescription>
             </CardHeader>
-            <CardContent className="pt-0 space-y-2">
+            <CardContent className="pt-0">
               <Link to="/resume-analysis" className="block">
                 <Button className="w-full bg-gradient-accent hover:opacity-90 transition-opacity">
                   New Analysis <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
               {resumeHistory.length > 0 && (
-                <Link to="/my-resumes" className="block">
-                  <Button variant="outline" className="w-full">
-                    <History className="mr-2 w-4 h-4" /> My Resumes ({resumeHistory.length})
-                  </Button>
-                </Link>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
+                  <Link to="/my-resumes" className="hover:text-foreground underline-offset-2 hover:underline">
+                    My Resumes ({resumeHistory.length})
+                  </Link>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -202,68 +282,21 @@ const Dashboard = () => {
               <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
                 <MessageSquare className="w-6 h-6 text-primary" />
               </div>
-              <CardTitle>Start Mock Interview</CardTitle>
+              <CardTitle>Mock Interview</CardTitle>
               <CardDescription>Strict AI interviewer with live proctoring</CardDescription>
             </CardHeader>
-            <CardContent className="pt-0 space-y-2">
+            <CardContent className="pt-0">
               <Link to="/interview" className="block">
                 <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
                   Start Interview <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
               {hasCompletedInterview && (
-                <Link to="/interview-history" className="block">
-                  <Button variant="outline" className="w-full">
-                    <History className="mr-2 w-4 h-4" /> History ({totalInterviews})
-                  </Button>
-                </Link>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border shadow-md hover:shadow-lg transition-shadow flex flex-col">
-            <CardHeader className="flex-1">
-              <div className="w-12 h-12 rounded-lg bg-warning/10 flex items-center justify-center mb-4">
-                <Brain className="w-6 h-6 text-warning" />
-              </div>
-              <CardTitle>Aptitude Practice</CardTitle>
-              <CardDescription>Timed mocks, leaderboards & streaks</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-2">
-              <Link to="/aptitude" className="block">
-                <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
-                  Take Test <ArrowRight className="ml-2 w-4 h-4" />
-                </Button>
-              </Link>
-              <Link to="/leaderboard" className="block">
-                <Button variant="outline" className="w-full">
-                  <Trophy className="mr-2 w-4 h-4" /> Leaderboard
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-
-          <Card className="border border-border shadow-md hover:shadow-lg transition-shadow flex flex-col">
-            <CardHeader className="flex-1">
-              <div className="w-12 h-12 rounded-lg bg-success/10 flex items-center justify-center mb-4">
-                <BarChart3 className="w-6 h-6 text-success" />
-              </div>
-              <CardTitle>View Reports</CardTitle>
-              <CardDescription>Re-open past reports and track progress</CardDescription>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <Link to="/interview-history" className="block">
-                <Button
-                  className="w-full bg-gradient-accent hover:opacity-90 transition-opacity"
-                  disabled={!hasCompletedInterview}
-                >
-                  Interview History <ArrowRight className="ml-2 w-4 h-4" />
-                </Button>
-              </Link>
-              {!hasCompletedInterview && (
-                <p className="text-xs text-muted-foreground mt-2">
-                  Complete an interview to build history
-                </p>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
+                  <Link to="/interview-history" className="hover:text-foreground underline-offset-2 hover:underline">
+                    History ({totalInterviews})
+                  </Link>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -271,7 +304,8 @@ const Dashboard = () => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Card className="border border-border">
+          <Link to="/my-resumes" className="block">
+          <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Latest Resume Score</CardTitle>
               <div className="w-10 h-10 rounded-lg bg-metric/10 flex items-center justify-center">
@@ -296,8 +330,10 @@ const Dashboard = () => {
               )}
             </CardContent>
           </Card>
+          </Link>
 
-          <Card className="border border-border">
+          <Link to="/interview-history" className="block">
+          <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Interviews</CardTitle>
               <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
@@ -320,8 +356,10 @@ const Dashboard = () => {
               )}
             </CardContent>
           </Card>
+          </Link>
 
-          <Card className="border border-border">
+          <Link to="/aptitude/dashboard" className="block">
+          <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Aptitude Accuracy</CardTitle>
               <div className="w-10 h-10 rounded-lg bg-warning/10 flex items-center justify-center">
@@ -346,8 +384,10 @@ const Dashboard = () => {
               )}
             </CardContent>
           </Card>
+          </Link>
 
-          <Card className="border border-border">
+          <Link to="/aptitude" className="block">
+          <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Practice Streak</CardTitle>
               <div className="w-10 h-10 rounded-lg bg-success/10 flex items-center justify-center">
@@ -365,6 +405,7 @@ const Dashboard = () => {
               )}
             </CardContent>
           </Card>
+          </Link>
         </div>
 
         {/* Progress-over-time chart */}

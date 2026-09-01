@@ -64,10 +64,31 @@ export interface AdminInterviewSession {
   user?: { name?: string; email?: string } | null;
 }
 
-interface Paged<T> {
+export interface AdminCodingQuestion {
+  _id: string;
+  title: string;
+  slug: string;
+  description: string;
+  difficulty: "easy" | "medium" | "hard";
+  category: string;
+  tags: string[];
+  starterCode: Record<string, string>;
+  solution: Record<string, string>;
+  testCases: Array<{ input: string; output: string; isHidden: boolean; points: number; description?: string }>;
+  constraints?: string;
+  timeLimit?: number;
+  memoryLimit?: number;
+  explanation?: string;
+  isPublished?: boolean;
+  isActive?: boolean;
+  createdAt?: string;
+}
+
+interface Paged<T = unknown> {
   page: number;
   pages: number;
   total: number;
+  items?: T[];
 }
 
 async function getJson<T>(path: string): Promise<T> {
@@ -219,4 +240,21 @@ export const adminAPI = {
     if (!res.ok) throw new Error('Failed to export proctor logs');
     return res.text();
   },
+
+  // Coding
+  getCodingQuestions: (params: { page?: number; limit?: number; category?: string; difficulty?: string; search?: string; published?: string }) => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set("page", String(params.page));
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.category && params.category !== "all") qs.set("category", params.category);
+    if (params.difficulty && params.difficulty !== "all") qs.set("difficulty", params.difficulty);
+    if (params.search) qs.set("search", params.search);
+    if (params.published && params.published !== "all") qs.set("published", params.published);
+    return getJson<Paged<AdminCodingQuestion> & { questions: AdminCodingQuestion[] }>(`/admin/coding-questions?${qs}`);
+  },
+  getCodingQuestion: (id: string) => getJson<AdminCodingQuestion>(`/admin/coding-questions/${id}`),
+  createCodingQuestion: (q: Omit<AdminCodingQuestion, "_id"> & Record<string, unknown>) => sendJson<AdminCodingQuestion>("/admin/coding-questions", "POST", q),
+  updateCodingQuestion: (id: string, q: Partial<AdminCodingQuestion>) => sendJson<AdminCodingQuestion>(`/admin/coding-questions/${id}`, "PUT", q),
+  deleteCodingQuestion: (id: string) => sendJson<{ message: string }>(`/admin/coding-questions/${id}`, "DELETE"),
+  bulkImportCoding: (payload: { items?: unknown[]; csv?: string; dryRun?: boolean }) => sendJson<{ imported: number; failed: number; errors: Array<{ row: number | string; error: string }> }>("/admin/coding-questions/bulk", "POST", payload),
 };

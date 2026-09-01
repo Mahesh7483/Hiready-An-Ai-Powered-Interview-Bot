@@ -220,7 +220,7 @@ const AdminQuestions = () => {
                 </TableRow>
               )}
 
-              {data?.questions.map((q) => (
+              {data?.questions.map((q: typeof data.questions[0]) => (
                 <TableRow key={q._id}>
                   <TableCell className="max-w-md">
                     <span className="line-clamp-2 text-sm">{q.Question}</span>

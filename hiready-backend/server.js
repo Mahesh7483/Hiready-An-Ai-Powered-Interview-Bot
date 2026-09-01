@@ -6,16 +6,15 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
-// Keep the API alive on unexpected async failures — log and continue instead of crashing
 process.on('unhandledRejection', (reason) => {
   console.error('[unhandledRejection]', reason);
 });
 process.on('uncaughtException', (err) => {
   console.error('[uncaughtException]', err);
+  if (process.env.NODE_ENV === 'production') {
+    process.exit(1);
+  }
 });
-
-const { requireAuth } = require('./middleware/auth');
-
 // 2. Create app
 const app = express();
 app.set('trust proxy', 1);
@@ -45,7 +44,7 @@ app.use(
       }
       return callback(new Error('Not allowed by CORS'));
     },
-    methods: ['GET', 'POST', 'DELETE', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
     credentials: true
   })
 );
@@ -71,11 +70,23 @@ const authLimiter = rateLimit({
 app.use(express.json({ limit: '10mb' }));
 
 // 4. Connect to MongoDB
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => console.log('MongoDB Connected'))
-  .catch((err) => console.error('DB Error:', err && err.message ? err.message : err));
+if (process.env.NODE_ENV !== 'test' && process.env.MONGO_URI) {
+  mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('MongoDB Connected'))
+    .catch((err) => console.error('DB Error:', err && err.message ? err.message : err));
+}
 
-// 5. Basic test route
+// 5. Root + test routes
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Hiready API',
+    status: 'running',
+    frontend: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',')[0] : 'http://localhost:8080',
+    apiBase: `${req.protocol}://${req.get('host')}/api`,
+    health: `${req.protocol}://${req.get('host')}/api/test`,
+  });
+});
+
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Backend is working' });
 });
@@ -89,6 +100,7 @@ const adminRoutes = require('./routes/adminRoutes');
 const resumeRoutes = require('./routes/resumeRoutes');
 const interviewSessionRoutes = require('./routes/interviewSessionRoutes');
 const codingRoutes = require('./routes/coding/execution');
+const codingQuestionRoutes = require('./routes/coding/questions');
 const { initCollab } = require('./services/collab');
 const assessmentRoutes = require('./routes/assessmentRoutes');
 const readinessRoutes = require('./routes/readinessRoutes');
@@ -102,21 +114,18 @@ app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/resumes', apiLimiter, resumeRoutes);
 app.use('/api/interviews', apiLimiter, interviewSessionRoutes);
 app.use('/api/code', apiLimiter, codingRoutes);
+app.use('/api/admin/coding-questions', apiLimiter, codingQuestionRoutes);
 app.use('/api/assessment', apiLimiter, assessmentRoutes);
 app.use('/api/readiness', apiLimiter, readinessRoutes);
 
-// Expose the auth middleware for routes that need it after mounting
-app.locals.requireAuth = requireAuth;
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
-// 8. Centralized error handler — never leak raw error details to clients
-// eslint-disable-next-line no-unused-vars
-app.use((err, req, res, next) => {
-  if (err && err.message === 'Not allowed by CORS') {
-    return res.status(403).json({ error: 'Origin not allowed' });
-  }
-  console.error('Unhandled error:', err && err.message ? err.message : err);
-  return res.status(500).json({ error: 'Internal server error' });
-});
+// 8. 404 handler for undefined routes
+app.use('/api', notFoundHandler);
+app.use(notFoundHandler);
+
+// 9. Centralized error handler
+app.use(errorHandler);
 
 // 9. Start server
 const PORT = process.env.PORT || 5000;

@@ -23,6 +23,7 @@ export default defineConfig(({ mode }) => ({
         // proctored page (assessment/voice interview) is visited.
         manualChunks(id) {
           if (!id.includes("node_modules")) return undefined;
+          if (id.includes("monaco-editor")) return "vendor-monaco";
           if (id.includes("@tensorflow")) return "vendor-tensorflow";
           if (id.includes("firebase")) return "vendor-firebase";
           if (id.includes("pdfjs-dist") || id.includes("mammoth")) return "vendor-docs";

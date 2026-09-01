@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { CodeEditor } from "@/components/coding/CodeEditor";
-import { Loader2, Clock, Coffee, Mic, ShieldAlert, ArrowRight, Play } from "lucide-react";
+import { Loader2, Clock, Coffee, Mic, ShieldAlert, ArrowRight, Play, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { assessmentAPI, type AttemptDTO, type AssessmentSectionDTO } from "@/lib/assessmentApi";
 import { apiJson, getAuthHeaders, API_BASE_URL } from "@/lib/api";
@@ -30,10 +30,6 @@ interface CodingQuestionDTO {
   starterCode?: Record<string, string>;
   testCases?: Array<{ input: string; output: string }>;
 }
-
-const PAUSE_LABELS: Record<string, string> = {
-  A: "Option A", B: "Option B", C: "Option C", D: "Option D",
-};
 
 const AssessmentPipeline = () => {
   const navigate = useNavigate();
@@ -231,15 +227,51 @@ const AssessmentPipeline = () => {
     if (!codingQuestion) return;
     setCodingRunning(true);
     setCodingOutput("");
+    // Prefer graded run against the question's visible test cases when available
+    const hasVisibleTests = (codingQuestion.testCases?.length ?? 0) > 0;
+    const endpoint = hasVisibleTests
+      ? `${API_BASE_URL}/code/run-tests/${codingQuestion._id}`
+      : `${API_BASE_URL}/code/execute`;
     try {
-      const res = await fetch(`${API_BASE_URL}/code/execute`, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-        body: JSON.stringify({ code: codingCode, language: codingLang, timeLimit: 10000 }),
+        body: JSON.stringify(
+          hasVisibleTests
+            ? { code: codingCode, language: codingLang }
+            : { code: codingCode, language: codingLang, timeLimit: 10000 }
+        ),
       });
-      const data = await res.json();
-      setCodingOutput(data.stdout || data.stderr || "(no output)");
+      const data = await res.json().catch(() => ({}) as Record<string, unknown>);
+      if (!res.ok) {
+        const msg = (data.error as string) || `Execution failed (HTTP ${res.status})`;
+        setCodingOutput(msg);
+        toast.error(msg);
+        return;
+      }
+      if (hasVisibleTests) {
+        const results = (data.testResults as Array<{ passed: boolean; input: string; expected: string; actual: string; error?: string }> | undefined) || [];
+        const passed = (data.passedCount as number | undefined) ?? results.filter((t) => t.passed).length;
+        const total = (data.total as number | undefined) ?? results.length;
+        const lines: string[] = [];
+        lines.push(passed === total ? `✅ All ${total} test case${total === 1 ? "" : "s"} passed` : `❌ ${passed}/${total} test case(s) passed`);
+        lines.push("");
+        results.forEach((t, i) => {
+          lines.push(`Test ${i + 1}: ${t.passed ? "PASSED" : "FAILED"}`);
+          lines.push(`  Input:    ${t.input || "(empty)"}`);
+          lines.push(`  Expected: ${t.expected || "(empty)"}`);
+          lines.push(`  Actual:   ${t.actual || "(empty)"}`);
+          if (t.error) lines.push(`  Error:    ${t.error}`);
+          lines.push("");
+        });
+        const stdout = String(data.stdout || "").trim();
+        if (stdout) lines.push("stdout:", stdout);
+        setCodingOutput(lines.join("\n"));
+      } else {
+        setCodingOutput((data.stdout as string) || (data.stderr as string) || "(no output)");
+      }
     } catch {
+      setCodingOutput("Execution failed — could not reach the server.");
       toast.error("Execution failed");
     } finally {
       setCodingRunning(false);
@@ -433,6 +465,17 @@ const AssessmentPipeline = () => {
               <ShieldAlert className="w-3.5 h-3.5" />
               {attempt.violationScore} / {attempt.violationThreshold}
             </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-muted-foreground hover:text-destructive"
+              onClick={() => {
+                if (window.confirm("Leave this assessment? Your attempt is saved and you can resume it later from the Assessments page.")) navigate("/assessments");
+              }}
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              Exit
+            </Button>
           </div>
         </div>
 
@@ -523,7 +566,7 @@ const AssessmentPipeline = () => {
 
                 <Card>
                   <CardContent className="pt-4">
-                    <CodeEditor code={codingCode} onChange={setCodingCode} language={codingLang} />
+                    <CodeEditor code={codingCode} onChange={setCodingCode} language={codingLang} onRun={runCoding} running={codingRunning} />
                   </CardContent>
                 </Card>
 
@@ -531,12 +574,16 @@ const AssessmentPipeline = () => {
                   <select
                     value={codingLang}
                     onChange={(e) => {
-                      setCodingLang(e.target.value);
-                      setCodingCode(codingQuestion.starterCode?.[e.target.value] || "");
+                      const next = e.target.value;
+                      const hasCustomCode =
+                        codingCode.trim() !== "" && codingCode !== (codingQuestion.starterCode?.[codingLang] || "");
+                      if (hasCustomCode && !window.confirm("Switching language will reset your code. Continue?")) return;
+                      setCodingLang(next);
+                      setCodingCode(codingQuestion.starterCode?.[next] || "");
                     }}
                     className="h-9 rounded-md border border-input bg-background px-3 text-sm"
                   >
-                    {["python", "javascript", "java", "go", "cpp"].map((l) => (
+                    {["python", "javascript", "typescript", "java", "go", "cpp", "rust"].map((l) => (
                       <option key={l} value={l}>{l}</option>
                     ))}
                   </select>

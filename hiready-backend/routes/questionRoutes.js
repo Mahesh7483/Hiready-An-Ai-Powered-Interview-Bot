@@ -152,10 +152,16 @@ router.post('/quiz/submit', async (req, res) => {
     const questionMap = new Map(questions.map((q) => [String(q._id), q]));
 
     const applyPenalty = Boolean(negativeMarking);
+    // Anti-cheat: grade each question at most once (first answer wins) —
+    // duplicate questionIds in the payload can't inflate the score.
+    const gradedIds = new Set();
     let score = 0;
     const results = [];
     for (const item of answers) {
-      const question = questionMap.get(String(item.questionId));
+      const qid = String(item.questionId);
+      if (gradedIds.has(qid)) continue;
+      gradedIds.add(qid);
+      const question = questionMap.get(qid);
       if (question) {
         const isCorrect = question.Answer === item.selected;
         if (isCorrect) score += 1;
@@ -178,7 +184,7 @@ router.post('/quiz/submit', async (req, res) => {
 });
 
 // GET /api/questions/leaderboard?range=week|all — top users by accuracy
-router.get('/leaderboard', async (req, res) => {
+router.get('/leaderboard', requireAuth, async (req, res) => {
   try {
     const range = req.query.range === 'week' ? 'week' : 'all';
     const match = range === 'week'
@@ -247,8 +253,9 @@ router.get('/leaderboard', async (req, res) => {
 // GET /api/questions/wrong-answers/me — questions this user got wrong, with explanations
 router.get('/wrong-answers/me', requireAuth, async (req, res) => {
   try {
+    const userObjId = mongoose.Types.ObjectId.isValid(req.user.id) ? new mongoose.Types.ObjectId(String(req.user.id)) : req.user.id;
     const wrong = await TestResult.aggregate([
-      { $match: { userId: req.user.id } },
+      { $match: { userId: userObjId } },
       { $unwind: '$selectedAnswers' },
       {
         $match: {

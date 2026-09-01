@@ -8,6 +8,8 @@ import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminRoute } from "./components/admin/AdminRoute";
 import Index from "./pages/Index";
 import { PageLoader } from "./components/PageLoader";
+import ErrorBoundary from "./components/ErrorBoundary";
+import { AuthProvider } from "./context/AuthContext";
 
 // Route-level code splitting: every page except the landing screen loads on
 // demand. This keeps heavy libs (TensorFlow proctoring, Monaco, Recharts,
@@ -42,61 +44,64 @@ const AdminProctoring = lazy(() => import("./pages/admin/AdminProctoring"));
 const AdminInterviews = lazy(() => import("./pages/admin/AdminInterviews"));
 const AdminUserDetail = lazy(() => import("./pages/admin/AdminUserDetail"));
 const AdminAssessments = lazy(() => import("./pages/admin/AdminAssessments"));
+const AdminCodingQuestions = lazy(() => import("./pages/admin/AdminCodingQuestions"));
 
 const queryClient = new QueryClient();
 
 const App = () => (
-  <QueryClientProvider client={queryClient}>
-    <TooltipProvider>
-      <Toaster />
-      <Sonner />
-      <BrowserRouter>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/signup" element={<Signup />} />
-          {/* Private routes */}
-          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-          <Route path="/resume-analysis" element={<ProtectedRoute><ResumeAnalysis /></ProtectedRoute>} />
-          <Route path="/resume-report" element={<ProtectedRoute><ResumeReport /></ProtectedRoute>} />
-          <Route path="/interview" element={<ProtectedRoute><Interview /></ProtectedRoute>} />
-          <Route path="/voice-interview" element={<ProtectedRoute><VoiceInterview /></ProtectedRoute>} />
-          <Route path="/interview-report" element={<ProtectedRoute><InterviewReport /></ProtectedRoute>} />
-          <Route path="/interview-history" element={<ProtectedRoute><InterviewHistory /></ProtectedRoute>} />
-          <Route path="/coding-interview" element={<ProtectedRoute><CodingInterview /></ProtectedRoute>} />
-          <Route path="/my-resumes" element={<ProtectedRoute><ResumeHistory /></ProtectedRoute>} />
-          <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-          <Route path="/aptitude/notebook" element={<ProtectedRoute><WrongAnswersNotebook /></ProtectedRoute>} />
-          {/* Aptitude routes */}
-          <Route path="/aptitude" element={<ProtectedRoute><AptitudePlayCards /></ProtectedRoute>} />
-          <Route path="/aptitude/practice" element={<ProtectedRoute><AptitudePractice /></ProtectedRoute>} />
-          <Route path="/aptitude/test" element={<ProtectedRoute><AptitudeTestPage /></ProtectedRoute>} />
-          <Route path="/aptitude/dashboard" element={<ProtectedRoute><AptitudeDashboard /></ProtectedRoute>} />
-          <Route path="/aptitude/result" element={<ProtectedRoute><AptitudeResult /></ProtectedRoute>} />
-          {/* Legacy routes — redirect to new paths */}
-          <Route path="/aptitude-play-cards" element={<ProtectedRoute><AptitudePlayCards /></ProtectedRoute>} />
-          <Route path="/aptitude-test" element={<ProtectedRoute><AptitudeTest /></ProtectedRoute>} />
-          <Route path="/aptitude-result" element={<ProtectedRoute><AptitudeResult /></ProtectedRoute>} />
-          {/* Admin routes — role-guarded via backend check */}
-          <Route path="/admin" element={<AdminRoute><AdminOverview /></AdminRoute>} />
-          <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
-          <Route path="/admin/questions" element={<AdminRoute><AdminQuestions /></AdminRoute>} />
-          <Route path="/admin/results" element={<AdminRoute><AdminResults /></AdminRoute>} />
-          <Route path="/admin/proctoring" element={<AdminRoute><AdminProctoring /></AdminRoute>} />
-          <Route path="/admin/interviews" element={<AdminRoute><AdminInterviews /></AdminRoute>} />
-          <Route path="/admin/assessments" element={<AdminRoute><AdminAssessments /></AdminRoute>} />
-          <Route path="/admin/users/:id" element={<AdminRoute><AdminUserDetail /></AdminRoute>} />
-          {/* Assessment routes */}
-          <Route path="/assessments" element={<ProtectedRoute><AssessmentLanding /></ProtectedRoute>} />
-          <Route path="/assessments/take" element={<ProtectedRoute><AssessmentPipeline /></ProtectedRoute>} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-          </Routes>
-        </Suspense>
-      </BrowserRouter>
-    </TooltipProvider>
-  </QueryClientProvider>
+  <ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
+              <Route path="/" element={<Index />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              {/* Private routes */}
+              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+              <Route path="/resume-analysis" element={<ProtectedRoute><ResumeAnalysis /></ProtectedRoute>} />
+              <Route path="/resume-report" element={<ProtectedRoute><ResumeReport /></ProtectedRoute>} />
+              <Route path="/interview" element={<ProtectedRoute><Interview /></ProtectedRoute>} />
+              <Route path="/voice-interview" element={<ProtectedRoute><VoiceInterview /></ProtectedRoute>} />
+              <Route path="/interview-report" element={<ProtectedRoute><InterviewReport /></ProtectedRoute>} />
+              <Route path="/interview-history" element={<ProtectedRoute><InterviewHistory /></ProtectedRoute>} />
+              <Route path="/resume-history" element={<ProtectedRoute><ResumeHistory /></ProtectedRoute>} />
+              <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+              <Route path="/wrong-answers" element={<ProtectedRoute><WrongAnswersNotebook /></ProtectedRoute>} />
+              <Route path="/aptitude" element={<ProtectedRoute><AptitudePlayCards /></ProtectedRoute>} />
+              <Route path="/aptitude-dashboard" element={<ProtectedRoute><AptitudeDashboard /></ProtectedRoute>} />
+              <Route path="/aptitude-practice" element={<ProtectedRoute><AptitudePractice /></ProtectedRoute>} />
+              <Route path="/aptitude-test-page" element={<ProtectedRoute><AptitudeTestPage /></ProtectedRoute>} />
+              <Route path="/coding" element={<ProtectedRoute><CodingInterview /></ProtectedRoute>} />
+              <Route path="/coding-interview" element={<ProtectedRoute><CodingInterview /></ProtectedRoute>} />
+              <Route path="/aptitude-test" element={<ProtectedRoute><AptitudeTest /></ProtectedRoute>} />
+              <Route path="/aptitude-result" element={<ProtectedRoute><AptitudeResult /></ProtectedRoute>} />
+              {/* Admin routes — role-guarded via backend check */}
+              <Route path="/admin" element={<AdminRoute><AdminOverview /></AdminRoute>} />
+              <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
+              <Route path="/admin/questions" element={<AdminRoute><AdminQuestions /></AdminRoute>} />
+              <Route path="/admin/results" element={<AdminRoute><AdminResults /></AdminRoute>} />
+              <Route path="/admin/proctoring" element={<AdminRoute><AdminProctoring /></AdminRoute>} />
+              <Route path="/admin/interviews" element={<AdminRoute><AdminInterviews /></AdminRoute>} />
+              <Route path="/admin/assessments" element={<AdminRoute><AdminAssessments /></AdminRoute>} />
+              <Route path="/admin/coding-questions" element={<AdminRoute><AdminCodingQuestions /></AdminRoute>} />
+              <Route path="/admin/users/:id" element={<AdminRoute><AdminUserDetail /></AdminRoute>} />
+              {/* Assessment routes */}
+              <Route path="/assessments" element={<ProtectedRoute><AssessmentLanding /></ProtectedRoute>} />
+              <Route path="/assessments/take" element={<ProtectedRoute><AssessmentPipeline /></ProtectedRoute>} />
+              {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
+              <Route path="*" element={<NotFound />} />
+              </Routes>
+            </Suspense>
+          </BrowserRouter>
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  </ErrorBoundary>
 );
 
 export default App;

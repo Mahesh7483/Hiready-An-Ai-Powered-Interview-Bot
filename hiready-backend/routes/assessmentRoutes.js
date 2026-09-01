@@ -199,7 +199,7 @@ router.get('/templates', async (req, res) => {
   try {
     const templates = await AssessmentTemplate.find({ isPublished: true }).sort({ createdAt: -1 }).lean();
     res.json({ templates });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to load templates' });
   }
 });
@@ -228,17 +228,27 @@ router.put('/templates/:id', requireAdmin, async (req, res) => {
     const updated = await AssessmentTemplate.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ error: 'Template not found' });
     res.json(updated);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to update template' });
   }
 });
 
 router.delete('/templates/:id', requireAdmin, async (req, res) => {
   try {
+    const hasAttempts = await AssessmentAttempt.exists({ templateId: req.params.id });
+    if (hasAttempts) {
+      const updated = await AssessmentTemplate.findByIdAndUpdate(
+        req.params.id,
+        { isPublished: false, isArchived: true },
+        { new: true }
+      );
+      if (!updated) return res.status(404).json({ error: 'Template not found' });
+      return res.json({ message: 'Template archived (cannot hard-delete template with existing candidate attempts)' });
+    }
     const deleted = await AssessmentTemplate.findByIdAndDelete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Template not found' });
     res.json({ message: 'Deleted' });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to delete template' });
   }
 });
@@ -449,45 +459,98 @@ router.post('/attempt/:id/section/:idx/submit', async (req, res) => {
     const section = template.sections[idx];
     const state = (attempt.sectionState || {})[idx] || {};
 
-    let result = { sectionIndex: idx, type: section.type, score: 0, maxScore: 0, meta: {}, completedAt: new Date() };
+    // Server-side deadline enforcement: the section must be submitted within
+    // its time window (+60s grace, matching GET /attempt/current). Late
+    // submissions are rejected and the attempt is closed — nothing is graded.
+    if (attempt.sectionStartedAt) {
+      const deadline = new Date(attempt.sectionStartedAt.getTime() + section.minutes * 60000 + 60000);
+      if (new Date() > deadline) {
+        attempt.status = 'auto_submitted';
+        attempt.completedAt = new Date();
+        await attempt.save();
+        return res.status(400).json({ error: 'Section time expired — the attempt has been closed' });
+      }
+    }
+
+    const result = { sectionIndex: idx, type: section.type, score: 0, maxScore: 0, meta: {}, completedAt: new Date() };
 
     if (section.type === 'aptitude') {
       const { answers = [] } = req.body; // [{questionId, selected}]
       const negative = section.negativeMarking !== false;
+      // Anti-cheat: only questions locked into THIS section count, and each
+      // question is graded at most once (first answer wins) — duplicate or
+      // foreign questionIds can no longer inflate the score.
+      const sectionQuestionIds = new Set((state.questionIds || []).map(String));
+      const gradedIds = new Set();
       let score = 0;
       const graded = [];
-      for (const a of answers) {
-        const originalAnswer = state.answerKey?.[a.questionId];
+      for (const a of Array.isArray(answers) ? answers : []) {
+        const qid = String(a && a.questionId ? a.questionId : '');
+        if (!qid || !sectionQuestionIds.has(qid) || gradedIds.has(qid)) continue;
+        gradedIds.add(qid);
+        const originalAnswer = state.answerKey?.[qid];
         if (!originalAnswer) continue;
         const isCorrect = a.selected === originalAnswer;
         if (isCorrect) score += 1;
         else if (negative && a.selected) score -= 0.25;
-        graded.push({ questionId: a.questionId, selected: a.selected, isCorrect });
+        graded.push({ questionId: qid, selected: a.selected, isCorrect });
       }
       score = Math.max(0, Math.round(score * 100) / 100);
       result.score = score;
       result.maxScore = (state.questionIds || []).length;
       result.meta = { answers: graded, questionIds: state.questionIds || [] };
     } else if (section.type === 'coding') {
-      // Scores come from already-verified CodingSubmissions made during the section
+      // Scores come from already-verified CodingSubmissions made during the
+      // section. Anti-cheat: only submissions for questions locked into THIS
+      // section count (submissions against unrelated questions are ignored),
+      // only the best submission per question is scored, and the total is
+      // capped at maxScore so foreign submissions can't inflate the result.
       const { submissionIds = [] } = req.body;
       const CodingSubmission = require('../models/CodingSubmission');
-      const subs = await CodingSubmission.find({ _id: { $in: submissionIds }, userId: req.user.id }).lean();
-      let score = 0;
+      const sectionQuestionIds = new Set((state.codingQuestionIds || []).map(String));
+      const validObjectIds = (Array.isArray(submissionIds) ? submissionIds : [])
+        .map((id) => String(id))
+        .filter((id) => mongoose.Types.ObjectId.isValid(id))
+        .map((id) => new mongoose.Types.ObjectId(id));
+      const subs = validObjectIds.length
+        ? await CodingSubmission.find({ _id: { $in: validObjectIds }, userId: req.user.id }).lean()
+        : [];
+      const bestPerQuestion = new Map(); // questionId -> normalized score 0..1
       for (const s of subs) {
+        const qid = String(s.questionId);
+        if (!sectionQuestionIds.has(qid)) continue;
         const max = (s.testResults || []).length || 1;
-        score += (s.score !== undefined ? s.score : 0) / max;
+        const normalized = (s.score !== undefined ? s.score : 0) / max;
+        const prev = bestPerQuestion.get(qid);
+        if (prev === undefined || normalized > prev) bestPerQuestion.set(qid, normalized);
       }
-      result.score = Math.round(score * 100) / 100;
+      let score = 0;
+      for (const normalized of bestPerQuestion.values()) score += normalized;
       result.maxScore = (state.codingQuestionIds || []).length;
-      result.meta = { submissionIds, codingQuestionIds: state.codingQuestionIds || [] };
+      result.score = Math.min(Math.round(score * 100) / 100, result.maxScore);
+      result.meta = { submissionIds: [...bestPerQuestion.keys()], codingQuestionIds: state.codingQuestionIds || [] };
     } else if (section.type === 'voice-interview') {
-      // Voice stage: client posts duration + conversation summary; scoring comes
-      // from /api/ai/interview-analyze if provided.
-      const { durationSeconds = 0, analysisScore = null, conversationTurns = 0 } = req.body;
-      result.score = analysisScore !== null ? analysisScore : Math.min(durationSeconds / 60, 1) * 5;
+      // Voice stage: the score is derived SERVER-SIDE from verifiable inputs
+      // only (duration vs. target, conversation turns). A client-posted
+      // analysis score is stored as advisory metadata — it never becomes the
+      // grade, so a manipulated client can't award itself points.
+      const rawDuration = Number(req.body.durationSeconds);
+      const rawTurns = Number(req.body.conversationTurns);
+      const durationSeconds = Number.isFinite(rawDuration) && rawDuration > 0 ? Math.min(rawDuration, section.minutes * 60 + 120) : 0;
+      const conversationTurns = Number.isFinite(rawTurns) && rawTurns > 0 ? Math.min(Math.round(rawTurns), 200) : 0;
+      const targetSeconds = (section.interviewDurationMin || 10) * 60;
+      // 80% for meeting the duration target, 20% for sustained conversation
+      // (roughly one turn per minute, capped) — generous caps keep honest reporters whole.
+      const durationScore = Math.min(durationSeconds / targetSeconds, 1) * 8;
+      const turnScore = Math.min(conversationTurns / Math.max(targetSeconds / 60, 1), 1) * 2;
+      result.score = Math.round((durationScore + turnScore) * 100) / 100;
       result.maxScore = 10;
-      result.meta = { durationSeconds, conversationTurns };
+      result.meta = {
+        durationSeconds,
+        conversationTurns,
+        reportedAnalysisScore: req.body.analysisScore ?? null,
+        scoredBy: 'server-derived',
+      };
     }
 
     await advanceOrFinish(attempt, template, result);
@@ -596,7 +659,7 @@ router.get('/attempt/:id/report', async (req, res) => {
         status: attempt.status,
       },
     });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to load report' });
   }
 });
@@ -642,7 +705,7 @@ router.get('/coding-question/:id', async (req, res) => {
     // Only visible test cases leave the server
     q.testCases = (q.testCases || []).filter((tc) => !tc.isHidden);
     res.json(q);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to load coding question' });
   }
 });
@@ -658,7 +721,7 @@ router.get('/admin/attempts', requireAdmin, async (req, res) => {
       .populate('userId', 'name email')
       .lean();
     res.json({ attempts });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to load attempts' });
   }
 });

@@ -41,6 +41,7 @@ export class DeepgramService {
     onUtteranceEnd?: () => void,
     onError?: (error: Error) => void
   ): Promise<void> {
+    this.stopLiveTranscription();
     try {
       // Get user's microphone access
       this.audioStream = await navigator.mediaDevices.getUserMedia({
@@ -70,14 +71,24 @@ export class DeepgramService {
       this.connection.on(LiveTranscriptionEvents.Open, () => {
         console.log("Deepgram connection opened");
 
-        // Setup MediaRecorder to send audio to Deepgram
-        this.mediaRecorder = new MediaRecorder(this.audioStream!, {
-          mimeType: "audio/webm",
-        });
+        // Setup MediaRecorder with dynamic MIME type negotiation for Safari/WebKit support
+        const mimeType = typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+          ? "audio/webm;codecs=opus"
+          : typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/webm")
+          ? "audio/webm"
+          : typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported("audio/mp4")
+          ? "audio/mp4"
+          : "";
+
+        this.mediaRecorder = new MediaRecorder(this.audioStream!, mimeType ? { mimeType } : undefined);
 
         this.mediaRecorder.ondataavailable = (event) => {
           if (event.data.size > 0 && this.connection) {
-            this.connection.send(event.data);
+            try {
+              this.connection.send(event.data);
+            } catch {
+              // Socket closed in transit
+            }
           }
         };
 
@@ -87,7 +98,7 @@ export class DeepgramService {
       // Handle transcription results
       this.connection.on(LiveTranscriptionEvents.Transcript, (data: DeepgramResultsMessage) => {
         const transcript = data.channel?.alternatives?.[0]?.transcript;
-        const isFinal = data.is_final;
+        const isFinal = data.is_final ?? false;
 
         if (transcript && transcript.trim() !== "") {
           onTranscript(transcript, isFinal);
@@ -114,6 +125,7 @@ export class DeepgramService {
       });
     } catch (error) {
       console.error("Failed to start live transcription:", error);
+      this.stopLiveTranscription();
       if (onError) onError(error as Error);
       throw error;
     }

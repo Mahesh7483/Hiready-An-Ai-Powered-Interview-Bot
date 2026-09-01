@@ -171,7 +171,7 @@ const AdminUsers = () => {
                 </TableRow>
               )}
 
-              {data?.users.map((u) => (
+              {data?.users.map((u: typeof data.users[0]) => (
                 <TableRow
                   key={u._id}
                   className="cursor-pointer"

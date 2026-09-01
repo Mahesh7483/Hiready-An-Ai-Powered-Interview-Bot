@@ -68,7 +68,7 @@ const AdminProctoring = () => {
             <SelectTrigger className="w-52"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All events</SelectItem>
-              {(data?.eventTypes ?? []).map((t) => (
+              {(data?.eventTypes ?? []).map((t: string) => (
                 <SelectItem key={t} value={t}>{t.replace(/_/g, " ")}</SelectItem>
               ))}
             </SelectContent>
@@ -133,7 +133,7 @@ const AdminProctoring = () => {
                 </TableRow>
               )}
 
-              {data?.logs.map((log) => (
+              {data?.logs.map((log: typeof data.logs[0]) => (
                 <TableRow key={log.id}>
                   <TableCell>
                     <Badge variant="destructive">{log.event.replace(/_/g, " ")}</Badge>

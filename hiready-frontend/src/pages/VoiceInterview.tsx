@@ -9,13 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Mic, MicOff, X, Volume2, AlertCircle, SkipForward, BookOpen, Laptop, Clock, Users, Briefcase, MonitorSmartphone, ShieldAlert } from "lucide-react";
+import { Mic, MicOff, X, Volume2, SkipForward, BookOpen, Laptop, Clock, Users, Briefcase, MonitorSmartphone, ShieldAlert } from "lucide-react";
 import CandidateWebcamMonitor from "@/components/proctoring/CandidateWebcamMonitor";
 import { sendProctorLog, type ProctorEvent } from "@/lib/proctorLogger";
 import { captureWebcamSnapshot } from "@/lib/webcamSnap";
 import { saveInterviewSession } from "@/lib/historyApi";
 import { detectDevice } from "@/lib/deviceGuard";
-import { runAudioCheck, type AudioCheckResult } from "@/lib/audioCheck";
+import { runAudioCheck } from "@/lib/audioCheck";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { deepgramService } from "@/lib/deepgram";
@@ -540,16 +540,7 @@ const VoiceInterviewContent = () => {
     });
   };
 
-  // Get user initials for avatar fallback
-  const getInitials = (displayName: string | null) => {
-    if (!displayName) return "U";
-    return displayName
-      .split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 1);
-  };
+  
 
   // Derive a display name: prefer displayName, then extract from email, fallback to "Candidate"
   const getCandidateName = () => {

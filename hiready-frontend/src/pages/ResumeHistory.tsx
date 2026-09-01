@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import {
-  Loader2, FileText, ChevronDown, Trash2, GitCompareArrows, TrendingUp, Calendar, Pencil, Search, Filter,
+  Loader2, FileText, Trash2, GitCompareArrows, TrendingUp, Calendar, Pencil, Search,
 } from "lucide-react";
 import { toast } from "sonner";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
@@ -246,8 +246,10 @@ const ResumeHistory = () => {
                     ["Format", "formatScore", "number"],
                     ["Missing Keywords (count)", "missingKeywords", "array"],
                   ] as const).map(([label, key, type]) => {
-                    let a: number | string | string[] = compareData[0][key];
-                    let b: number | string | string[] = compareData[1][key];
+                    let a: number | string | string[] | undefined = compareData[0]?.[key];
+                    let b: number | string | string[] | undefined = compareData[1]?.[key];
+                    a = a ?? 0;
+                    b = b ?? 0;
                     if (type === "array") {
                       a = (a as string[]).length;
                       b = (b as string[]).length;

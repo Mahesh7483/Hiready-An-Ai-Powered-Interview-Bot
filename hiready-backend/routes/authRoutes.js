@@ -86,7 +86,11 @@ router.post("/google", async (req, res) => {
     const name = payload.name || (email ? email.split("@")[0] : "Google User");
 
     if (!email) {
-      return res.status(400).json({ message: "Your Google account has no email" });
+      return res.status(400).json({ error: "Your Google account has no email" });
+    }
+
+    if (!payload.email_verified) {
+      return res.status(403).json({ error: "Email must be verified with Google to sign in" });
     }
 
     // Link by uid first, then by email (so existing accounts adopt the Google identity)
@@ -102,6 +106,8 @@ router.post("/google", async (req, res) => {
       });
     } else if (!user.firebaseUid) {
       user.firebaseUid = uid;
+      // Invalidate unverified password on Google link to prevent pre-hijacking
+      user.password = null;
       if (!user.name || user.name === "Unknown") user.name = name;
     }
 

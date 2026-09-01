@@ -13,13 +13,28 @@ export function getAuthHeaders(): Record<string, string> {
  * fetch wrapper that attaches the backend JWT when present.
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  return fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${API_BASE_URL}${path}`, {
     ...init,
     headers: {
       ...(init.headers || {}),
       ...getAuthHeaders(),
     },
   });
+
+  // Expired/invalid JWT: clear the stale token and send the user to login.
+  // Guards: never loop on auth endpoints themselves, and only redirect when
+  // we actually had a token (a missing token means we're already logged out —
+  // ProtectedRoute handles that case).
+  if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/auth/")) {
+    if (localStorage.getItem("token")) {
+      localStorage.removeItem("token");
+      if (!window.location.pathname.startsWith("/login")) {
+        window.location.assign("/login");
+      }
+    }
+  }
+
+  return res;
 }
 
 /**

@@ -80,7 +80,7 @@ const AdminInterviews = () => {
                 </TableRow>
               )}
 
-              {data?.sessions.map((s) => {
+              {data?.sessions.map((s: typeof data.sessions[0]) => {
                 const terminated = s.integrity?.terminated;
                 return (
                   <TableRow key={s._id} className={terminated ? "bg-destructive/5" : ""}>

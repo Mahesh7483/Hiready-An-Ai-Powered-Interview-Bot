@@ -32,48 +32,56 @@ export async function runAudioCheck(): Promise<AudioCheckResult> {
   analyser.smoothingTimeConstant = 0.3;
   source.connect(analyser);
 
-  const dataArray = new Uint8Array(analyser.frequencyBinCount);
-  const samples: number[] = [];
+  try {
+    const dataArray = new Float32Array(analyser.fftSize);
+    const samples: number[] = [];
+    const checkDuration = 3000; // 3 seconds
+    const startTime = Date.now();
 
-  const checkDuration = 3000; // 3 seconds
-  const startTime = Date.now();
+    await new Promise<void>((resolve) => {
+      const interval = setInterval(() => {
+        analyser.getFloatTimeDomainData(dataArray);
+        // Compute true waveform RMS from time-domain PCM amplitude
+        let sumSquares = 0;
+        for (let i = 0; i < dataArray.length; i++) {
+          sumSquares += dataArray[i] * dataArray[i];
+        }
+        const rms = Math.sqrt(sumSquares / dataArray.length); // normalized 0-1
+        samples.push(rms);
 
-  await new Promise<void>((resolve) => {
-    const tick = () => {
-      analyser.getByteFrequencyData(dataArray);
-      // Compute RMS from frequency data (approximation)
-      let sum = 0;
-      for (let i = 0; i < dataArray.length; i++) {
-        sum += dataArray[i] * dataArray[i];
-      }
-      const rms = Math.sqrt(sum / dataArray.length) / 255; // normalize 0-1
-      samples.push(rms);
+        if (Date.now() - startTime >= checkDuration) {
+          clearInterval(interval);
+          resolve();
+        }
+      }, 100);
+    });
 
-      if (Date.now() - startTime < 3000) {
-        requestAnimationFrame(tick);
-      } else {
-        stream.getTracks().forEach((t) => t.stop());
+    const avgRms = samples.length > 0 ? samples.reduce((a, b) => a + b, 0) / samples.length : 0;
+
+    let status: "quiet" | "moderate" | "noisy";
+    let message: string;
+    if (avgRms < 0.02) {
+      status = "quiet";
+      message = "Background noise is very low — excellent for the interview.";
+    } else if (avgRms < 0.08) {
+      status = "moderate";
+      message = "Background noise is acceptable. Try to find a slightly quieter spot if possible.";
+    } else {
+      status = "noisy";
+      message = "Background noise is high. Please find a quieter location before starting.";
+    }
+
+    return { rms: avgRms, status, message };
+  } finally {
+    try {
+      source.disconnect();
+      analyser.disconnect();
+      stream.getTracks().forEach((t) => t.stop());
+      if (audioContext.state !== "closed") {
         audioContext.close().catch(() => {});
-        resolve();
       }
-    };
-    requestAnimationFrame(tick);
-  });
-
-  const avgRms = samples.reduce((a, b) => a + b, 0) / samples.length;
-
-  let status: "quiet" | "moderate" | "noisy";
-  let message: string;
-  if (avgRms < 0.02) {
-    status = "quiet";
-    message = "Background noise is very low — excellent for the interview.";
-  } else if (avgRms < 0.08) {
-    status = "moderate";
-    message = "Background noise is acceptable. Try to find a slightly quieter spot if possible.";
-  } else {
-    status = "noisy";
-    message = "Background noise is high. Please find a quieter location before starting.";
+    } catch {
+      // Safe cleanup ignore
+    }
   }
-
-  return { rms: avgRms, status, message };
 }

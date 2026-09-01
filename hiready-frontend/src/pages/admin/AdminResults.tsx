@@ -181,7 +181,7 @@ const AdminResults = () => {
                 </TableRow>
               )}
 
-              {data?.results.map((r) => <ResultRow key={r._id} result={r} />)}
+              {data?.results.map((r: typeof data.results[0]) => <ResultRow key={r._id} result={r} />)}
             </TableBody>
           </Table>
         </CardContent>

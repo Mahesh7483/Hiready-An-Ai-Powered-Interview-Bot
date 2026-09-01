@@ -1,16 +1,15 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useParams } from "react-router-dom";
-import { ChevronLeft, FileText, MessageSquare, Award, ShieldAlert, Clock, History, TrendingUp, Video } from "lucide-react";
+import { ChevronLeft, Clock, Video } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/hooks/useAuth";
-import { adminAPI, type AdminUser, type AdminTestResult, type AdminProctorLog, type AdminInterviewSession } from "@/lib/adminApi";
+
+import { adminAPI, type AdminTestResult, type AdminProctorLog, type AdminInterviewSession } from "@/lib/adminApi";
 import { toast } from "sonner";
 import { fetchResumeHistory, type ResumeHistoryItem } from "@/lib/historyApi";
-import { fetchInterviewSessions, type InterviewSessionSummary } from "@/lib/historyApi";
+import { fetchInterviewSessions } from "@/lib/historyApi";
 import DashboardLayout from "@/components/DashboardLayout";
 
 interface UserDetail {
@@ -26,7 +25,6 @@ type UserDetailTab = "overview" | "resumes" | "interviews" | "tests" | "proctori
 
 const AdminUserDetail = () => {
   const { id } = useParams<{ id: string }>();
-  const { user: currentUser } = useAuth();
   const [user, setUser] = useState<UserDetail | null>(null);
   const [resumes, setResumes] = useState<ResumeHistoryItem[]>([]);
   const [interviews, setInterviews] = useState<AdminInterviewSession[]>([]);
@@ -53,8 +51,8 @@ const AdminUserDetail = () => {
           name: userRes.user.name,
           email: userRes.user.email,
           role: userRes.user.role,
-          firebaseUid: userRes.user.firebaseUid,
-          createdAt: userRes.user.createdAt
+          firebaseUid: userRes.user.firebaseUid ?? undefined,
+          createdAt: userRes.user.createdAt ?? ""
         });
         setResumes(resumeRes);
         setInterviews(interviewRes.sessions || []);

@@ -1,4 +1,5 @@
-﻿const express = require('express');
+const express = require('express');
+const mongoose = require('mongoose');
 const router = express.Router();
 const User = require('../models/User');
 const Question = require('../models/Question');
@@ -7,6 +8,11 @@ const ProctorLog = require('../models/ProctorLog');
 const { requireAdmin } = require('../middleware/auth');
 const AuditLog = require('../models/AuditLog');
 const Announcement = require('../models/Announcement');
+const InterviewSession = require('../models/InterviewSession');
+const ResumeAnalysis = require('../models/ResumeAnalysis');
+const AssessmentAttempt = require('../models/AssessmentAttempt');
+const CodingSubmission = require('../models/CodingSubmission');
+const SavedQuestion = require('../models/SavedQuestion');
 
 // Every route below requires a valid JWT AND the admin role (fresh DB check)
 router.use(requireAdmin);
@@ -34,7 +40,9 @@ function clampPage(req) {
   return { page, limit, skip: (page - 1) * limit };
 }
 
-function escapeRegex(str) { return String(str).replace(/[.*+?^{}()|[\\]\\\\]/g, String.fromCharCode(39) + String.fromCharCode(92) + String.fromCharCode(36) + String.fromCharCode(38) + String.fromCharCode(39)); }
+function escapeRegex(str) {
+  return String(str).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 // GET /api/admin/me
 
@@ -81,7 +89,7 @@ router.get('/announcements', async (req, res) => {
   try {
     const announcements = await Announcement.find().sort({ createdAt: -1 }).limit(20).lean();
     res.json({ announcements });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to load announcements' });
   }
 });
@@ -100,7 +108,7 @@ router.post('/announcements', async (req, res) => {
     });
     logAdminAction(req, 'announcement.create', 'Announcement:' + announcement._id, { level });
     res.status(201).json(announcement);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to create announcement' });
   }
 });
@@ -114,7 +122,7 @@ router.delete('/announcements/:id', async (req, res) => {
     if (!announcement) return res.status(404).json({ error: 'Announcement not found' });
     logAdminAction(req, 'announcement.deactivate', 'Announcement:' + req.params.id);
     res.json(announcement);
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to deactivate announcement' });
   }
 });
@@ -220,8 +228,9 @@ router.get('/users', async (req, res) => {
 
     // Test counts for the listed users in one aggregation
     const ids = users.map((u) => u._id);
+    const objectIds = ids.map((id) => (mongoose.Types.ObjectId.isValid(id) ? new mongoose.Types.ObjectId(String(id)) : id));
     const counts = await TestResult.aggregate([
-      { $match: { userId: { $in: ids.map(String) } } },
+      { $match: { userId: { $in: objectIds } } },
       { $group: { _id: '$userId', tests: { $sum: 1 } } }
     ]);
     const countMap = new Map(counts.map((c) => [String(c._id), c.tests]));
@@ -369,7 +378,12 @@ router.delete('/users/:id', async (req, res) => {
     await Promise.all([
       User.deleteOne({ _id: req.params.id }),
       TestResult.deleteMany({ userId: req.params.id }),
-      ProctorLog.deleteMany({ userId: req.params.id })
+      ProctorLog.deleteMany({ userId: req.params.id }),
+      InterviewSession.deleteMany({ user: req.params.id }),
+      ResumeAnalysis.deleteMany({ user: req.params.id }),
+      AssessmentAttempt.deleteMany({ userId: req.params.id }),
+      CodingSubmission.deleteMany({ userId: req.params.id }),
+      SavedQuestion.deleteMany({ userId: req.params.id }),
     ]);
 
     res.json({ message: 'User and associated data deleted' });

@@ -1,0 +1,28 @@
+{
+  "name": "hiready-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Hiready - AI Powered Interview Bot (monorepo root)",
+  "scripts": {
+    "build": "npm run build --prefix hiready-frontend",
+    "build:frontend": "npm run build --prefix hiready-frontend",
+    "build:all": "npm run build --prefix hiready-frontend",
+    "dev:backend": "npm run dev --prefix hiready-backend",
+    "dev:frontend": "npm run dev --prefix hiready-frontend",
+    "dev": "concurrently \"npm run dev --prefix hiready-backend\" \"npm run dev --prefix hiready-frontend\"",
+    "lint": "npm run lint --prefix hiready-frontend && npm run lint --prefix hiready-backend",
+    "lint:frontend": "npm run lint --prefix hiready-frontend",
+    "lint:backend": "npm run lint --prefix hiready-backend",
+    "typecheck": "npm run typecheck --prefix hiready-frontend",
+    "typecheck:frontend": "npm run typecheck --prefix hiready-frontend",
+    "test": "npm test --prefix hiready-backend && npm run typecheck --prefix hiready-frontend",
+    "test:backend": "npm test --prefix hiready-backend",
+    "install:all": "npm ci --prefix hiready-backend && npm ci --prefix hiready-frontend"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

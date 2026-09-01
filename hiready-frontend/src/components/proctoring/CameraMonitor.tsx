@@ -1,34 +1,50 @@
 import { useEffect, useRef } from "react";
 
 interface Props {
-  candidateId: string;
+  candidateId?: string;
 }
 
-const CameraMonitor: React.FC<Props> = ({ candidateId }) => {
+const CameraMonitor: React.FC<Props> = () => {
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
+    let activeStream: MediaStream | null = null;
+    let isCancelled = false;
+    const videoEl = videoRef.current;
 
     const startCamera = async () => {
       try {
-
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
           audio: false
         });
 
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+        if (isCancelled) {
+          stream.getTracks().forEach((t) => t.stop());
+          return;
         }
 
-      } catch (err) {
-        alert("Camera permission is required to start interview");
+        activeStream = stream;
+        if (videoEl) {
+          videoEl.srcObject = stream;
+        }
+      } catch {
+        // Handled silently or via UI notification
       }
     };
 
     startCamera();
 
+    return () => {
+      isCancelled = true;
+      if (activeStream) {
+        activeStream.getTracks().forEach((t) => t.stop());
+      }
+      if (videoEl) {
+        videoEl.srcObject = null;
+      }
+    };
   }, []);
 
   return (

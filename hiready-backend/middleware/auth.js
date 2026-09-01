@@ -20,7 +20,7 @@ function requireAuth(req, res, next) {
     }
     req.user = { id: payload.id };
     return next();
-  } catch (err) {
+  } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 }
@@ -41,7 +41,7 @@ async function requireAdmin(req, res, next) {
   let payload;
   try {
     payload = jwt.verify(token, process.env.JWT_SECRET);
-  } catch (err) {
+  } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 
