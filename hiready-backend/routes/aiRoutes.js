@@ -10,8 +10,15 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || 'missing-key-for-tes
 // Trimmed env var — empty string from compose no longer clobbers the default
 const GROQ_MODEL = (process.env.GROQ_MODEL || '').trim() || 'openai/gpt-oss-120b';
 
-const CATEGORIES_SAFE = ['logical', 'verbal', 'quant', 'technical', 'general'];
-const DIFFS_SAFE = ['easy', 'medium', 'hard'];
+const { APTITUDE_CATEGORIES: CATEGORIES_SAFE, DIFFICULTIES: DIFFS_SAFE } = require('../utils/constants');
+
+/**
+ * Detects a Groq rate-limit / payload-too-large error so callers can bail out
+ * fast instead of retrying a request that won't heal on an immediate retry.
+ */
+function isGroqRateLimit(err) {
+  return Boolean(err && (err.status === 413 || err.status === 429 || err.code === 'rate_limit_exceeded'));
+}
 
 /**
  * Call Groq chat completions with basic size guards and proper AbortController signal cancellation.
@@ -61,6 +68,22 @@ function validateMessages(messages) {
   );
 }
 
+/**
+ * Extract the first JSON object from an LLM response string.
+ * Returns { data: parsedObject, error: null } on success,
+ * or { data: null, error: 'empty' | 'malformed' } on failure.
+ */
+function parseFirstJsonObject(raw) {
+  const text = String(raw || '');
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return { data: null, error: 'empty' };
+  try {
+    return { data: JSON.parse(match[0]), error: null };
+  } catch {
+    return { data: null, error: 'malformed' };
+  }
+}
+
 // POST /api/ai/star-coach — STAR-method feedback on a behavioral answer
 router.post('/star-coach', async (req, res) => {
   const { question, answer } = req.body;
@@ -81,11 +104,10 @@ router.post('/star-coach', async (req, res) => {
     ], { temperature: 0.4, maxTokens: 700 });
 
     const raw = response.choices?.[0]?.message?.content || '';
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return res.status(502).json({ error: 'Empty response from AI provider' });
-    let parsed;
-    try { parsed = JSON.parse(match[0]); } catch { return res.status(502).json({ error: 'Malformed AI response' }); }
-    res.json(parsed);
+    const parsed = parseFirstJsonObject(raw);
+    if (parsed.error === 'empty') return res.status(502).json({ error: 'Empty response from AI provider' });
+    if (parsed.error === 'malformed') return res.status(502).json({ error: 'Malformed AI response' });
+    res.json(parsed.data);
   } catch (err) {
     console.error('STAR coach error:', err.message);
     res.status(502).json({ error: 'AI provider request failed' });
@@ -123,14 +145,14 @@ router.post('/draft-question', async (req, res) => {
     ], { temperature: 0.6, maxTokens: 500 });
 
     const raw = response.choices?.[0]?.message?.content || '';
-    const match = raw.match(/\{[\s\S]*\}/);
-    if (!match) return res.status(502).json({ error: 'Empty response from AI provider' });
-    let parsed;
-    try { parsed = JSON.parse(match[0]); } catch { return res.status(502).json({ error: 'Malformed AI response' }); }
-    if (!parsed.Question || !parsed['Option A'] || !parsed.Answer) {
+    const parsed = parseFirstJsonObject(raw);
+    if (parsed.error === 'empty') return res.status(502).json({ error: 'Empty response from AI provider' });
+    if (parsed.error === 'malformed') return res.status(502).json({ error: 'Malformed AI response' });
+    const draft = parsed.data;
+    if (!draft.Question || !draft['Option A'] || !draft.Answer) {
       return res.status(502).json({ error: 'AI draft missing required fields' });
     }
-    res.json({ ...parsed, category, difficulty });
+    res.json({ ...draft, category, difficulty });
   } catch (err) {
     console.error('Draft question error:', err.message);
     res.status(502).json({ error: 'AI provider request failed' });
@@ -390,9 +412,6 @@ router.post('/resume-analyze', async (req, res) => {
       ? resumeText.slice(0, MAX_RESUME_CHARS)
       : resumeText;
 
-  const isRateLimit = (err) =>
-    err && (err.status === 413 || err.status === 429 || err.code === 'rate_limit_exceeded');
-
   // When a JD is supplied, keywordMatch + missingKeywords target it exactly
   const jdBlock = safeJd
     ? `\n\nJOB DESCRIPTION TO MATCH (keywordMatch and missingKeywords MUST be computed against THIS text, not generic role expectations):\n---\n${safeJd}\n---`
@@ -413,7 +432,7 @@ router.post('/resume-analyze', async (req, res) => {
         return res.json(analysis);
       } catch (err) {
         // Rate limits won't heal on an immediate retry — bail out fast
-        if (isRateLimit(err)) {
+        if (isGroqRateLimit(err)) {
           console.error('Resume analyze rate-limited:', err.message);
           return res.status(413).json({
             error:
@@ -575,8 +594,6 @@ Guidelines:
 });
 
 // ── Resume+ AI tools ────────────────────────────────────────────────────
-const isGroqRateLimit = (err) =>
-  err && (err.status === 413 || err.status === 429 || err.code === 'rate_limit_exceeded');
 
 function guardResumeToolInput(res, text, min = 50, max = 20000) {
   if (!text || typeof text !== 'string' || text.length < min || text.length > max) {

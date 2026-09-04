@@ -155,28 +155,12 @@ export async function analyzeResumeWithLLM(
   experienceLevel: string,
   jobDescription?: string
 ): Promise<ResumeAnalysisResult> {
-  let response: Response;
-  try {
-    response = await fetch(`${API_BASE_URL}/ai/resume-analyze`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...getAuthHeaders(),
-      },
-      body: JSON.stringify({ resumeText, targetRole, experienceLevel, jobDescription }),
-    });
-  } catch {
-    throw new Error(
-      `Cannot reach the API server (${API_BASE_URL}). Check that the backend is running and try again.`
-    );
-  }
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || `Analysis failed (${response.status})`);
-  }
-
-  const analysis: ResumeAnalysisResult = await response.json();
+  const analysis = await postAiTool<ResumeAnalysisResult>("resume-analyze", {
+    resumeText,
+    targetRole,
+    experienceLevel,
+    jobDescription,
+  });
 
   // Basic shape validation of the parsed result
   if (
@@ -192,11 +176,18 @@ export async function analyzeResumeWithLLM(
 // ── Resume+ AI tools ────────────────────────────────────────────────────
 
 async function postAiTool<T>(path: string, body: Record<string, unknown>): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}/ai/${path}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-    body: JSON.stringify(body),
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/ai/${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new Error(
+      `Cannot reach the API server (${API_BASE_URL}). Check that the backend is running and try again.`
+    );
+  }
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || `Request failed (${response.status})`);

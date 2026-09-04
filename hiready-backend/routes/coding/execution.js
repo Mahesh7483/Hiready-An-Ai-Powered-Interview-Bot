@@ -6,14 +6,15 @@ const { requireAuth } = require('../../middleware/auth');
 const { executeCode } = require('../../services/sandbox');
 const CodingQuestion = require('../../models/CodingQuestion');
 const CodingSubmission = require('../../models/CodingSubmission');
+const { CODING_LANGUAGES, DIFFICULTIES, DIFFICULTY_ORDER } = require('../../utils/constants');
 
-const SUPPORTED_LANGUAGES = ['python', 'javascript', 'typescript', 'java', 'go', 'cpp', 'rust'];
+const SUPPORTED_LANGUAGES = CODING_LANGUAGES;
 const MAX_FILES = 10;
 const MAX_FILE_SIZE = 100 * 1024;
 const MAX_TEST_CASES = 20;
 const MAX_CODE_LENGTH = 100000;
 
-const DIFF_ORDER = { easy: 0, medium: 1, hard: 2 };
+const DIFF_ORDER = DIFFICULTY_ORDER;
 
 // Stricter limiter for heavy execution endpoints
 const execLimiter = rateLimit({
@@ -80,7 +81,7 @@ router.post('/execute', requireAuth, execLimiter, async (req, res) => {
 router.get('/questions', requireAuth, async (req, res) => {
   try {
     const filter = { isPublished: true, isActive: true };
-    const allowedDiffs = ['easy', 'medium', 'hard'];
+    const allowedDiffs = DIFFICULTIES;
     const allowedCats = ['arrays', 'strings', 'linked-lists', 'trees', 'graphs', 'dynamic-programming', 'sorting', 'searching', 'greedy', 'backtracking', 'bit-manipulation', 'math', 'geometry', 'databases', 'system-design'];
     if (req.query.difficulty && allowedDiffs.includes(String(req.query.difficulty).toLowerCase())) filter.difficulty = String(req.query.difficulty).toLowerCase();
     if (req.query.category && allowedCats.includes(String(req.query.category).toLowerCase())) filter.category = String(req.query.category).toLowerCase();

@@ -32,6 +32,23 @@ const emptySection = (): SectionDraft => ({
   negativeMarking: true,
 });
 
+// Data-driven config for section-type-specific extra fields.
+// Keeps createTemplate free of ad-hoc if/else chains.
+const sectionExtraFields: Record<SectionDraft["type"], (s: SectionDraft) => Record<string, unknown>> = {
+  aptitude: (s) => ({
+    topic: s.topic || "",
+    count: Number(s.count) || 10,
+    negativeMarking: s.negativeMarking !== false,
+  }),
+  coding: (s) => ({
+    codingCount: Number(s.codingCount) || 2,
+    codingDifficulty: s.codingDifficulty || "",
+  }),
+  "voice-interview": (s) => ({
+    interviewDurationMin: Number(s.interviewDurationMin) || 10,
+  }),
+};
+
 const AdminAssessments = () => {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<TemplateDTO[] | null>(null);
@@ -72,15 +89,7 @@ const AdminAssessments = () => {
       type: s.type,
       title: s.title.trim() || s.type,
       minutes: Number(s.minutes) || 10,
-      ...(s.type === "aptitude"
-        ? { topic: s.topic || "", count: Number(s.count) || 10, negativeMarking: s.negativeMarking !== false }
-        : {}),
-      ...(s.type === "coding"
-        ? { codingCount: Number(s.codingCount) || 2, codingDifficulty: s.codingDifficulty || "" }
-        : {}),
-      ...(s.type === "voice-interview"
-        ? { interviewDurationMin: Number(s.interviewDurationMin) || 10 }
-        : {}),
+      ...sectionExtraFields[s.type](s),
     }));
     setLoading(true);
     try {
