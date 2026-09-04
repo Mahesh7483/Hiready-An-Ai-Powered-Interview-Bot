@@ -4,6 +4,7 @@ const TestResult = require('../models/TestResult');
 const mongoose = require('mongoose');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
+const { DIFFICULTIES } = require('../utils/constants');
 
 // GET random quiz by category (supports ?count=N&difficulty=X)
 // Keeps backwards compatibility: /quiz/logical still works with default 10
@@ -82,7 +83,7 @@ router.get('/quiz/:category/adaptive', requireAuth, async (req, res) => {
     }));
     const accuracy = answered > 0 ? correct / answered : 0.5;
 
-    const order = ['easy', 'medium', 'hard'];
+    const order = DIFFICULTIES;
     const startLevel = accuracy >= 0.8 ? 2 : accuracy >= 0.5 ? 1 : 0;
 
     // Gentle ladder: hold each level for 2 questions, then drift up when the
