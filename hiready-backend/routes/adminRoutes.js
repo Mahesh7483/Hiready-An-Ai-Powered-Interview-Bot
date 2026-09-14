@@ -5,6 +5,7 @@ const User = require('../models/User');
 const Question = require('../models/Question');
 const TestResult = require('../models/TestResult');
 const ProctorLog = require('../models/ProctorLog');
+const ProctorSnapshot = require('../models/ProctorSnapshot');
 const { requireAdmin } = require('../middleware/auth');
 const AuditLog = require('../models/AuditLog');
 const Announcement = require('../models/Announcement');
@@ -673,6 +674,15 @@ router.get('/proctor-logs', async (req, res) => {
       .lean();
     const userMap = new Map(users.map((u) => [String(u._id), { name: u.name, email: u.email }]));
 
+    // Which of these events still have a frame. Asked as a separate id-only
+    // query so the list never loads image data it does not render — and so a
+    // frame that has passed its TTL simply reports false.
+    const framed = new Set(
+      (await ProctorSnapshot.find({ proctorLogId: { $in: logs.map((l) => l._id) } })
+        .select('proctorLogId')
+        .lean()).map((f) => String(f.proctorLogId))
+    );
+
     res.json({
       page,
       pages: Math.max(Math.ceil(total / limit), 1),
@@ -684,7 +694,7 @@ router.get('/proctor-logs', async (req, res) => {
         sessionId: l.sessionId,
         timestamp: l.timestamp,
         receivedAt: l.receivedAt,
-        hasSnapshot: Boolean(l.snapshot),
+        hasSnapshot: framed.has(String(l._id)),
         user: l.userId ? userMap.get(l.userId) || null : null
       }))
     });
@@ -694,15 +704,23 @@ router.get('/proctor-logs', async (req, res) => {
   }
 });
 
-// GET /api/admin/proctor-logs/:id/snapshot — evidence thumbnail for one log
+// GET /api/admin/proctor-logs/:id/snapshot — evidence frame for one log.
+//
+// Reads ProctorSnapshot, not ProctorLog: the image no longer lives on the log
+// row. This endpoint is admin-only and RESTRICTED in policy/dataAccess.js —
+// no recruiter-facing code may reach it or the model behind it.
 router.get('/proctor-logs/:id/snapshot', async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid id' });
     }
-    const log = await ProctorLog.findById(req.params.id).select('snapshot').lean();
-    if (!log || !log.snapshot) return res.status(404).json({ error: 'No snapshot' });
-    res.json({ snapshot: log.snapshot });
+    const frame = await ProctorSnapshot.findOne({ proctorLogId: req.params.id })
+      .select('image')
+      .lean();
+    // Absent is normal, not an error: frames expire on their TTL while the
+    // event they belonged to is retained.
+    if (!frame || !frame.image) return res.status(404).json({ error: 'No snapshot' });
+    res.json({ snapshot: frame.image });
   } catch (err) {
     console.error('Snapshot fetch error:', err.message);
     res.status(500).json({ error: 'Failed to load snapshot' });

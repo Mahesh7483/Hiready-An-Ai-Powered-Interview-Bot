@@ -600,13 +600,25 @@ router.post('/attempt/:id/face-check', async (req, res) => {
     const raw = typeof req.body.snapshot === 'string' ? req.body.snapshot : '';
     const snapshot = raw.startsWith('data:image') ? raw.slice(0, 80000) : null;
     const ProctorLog = require('../models/ProctorLog');
-    await ProctorLog.create({
-      sessionId: `assessment-${attempt._id}`,
+    const ProctorSnapshot = require('../models/ProctorSnapshot');
+    const sessionId = `assessment-${attempt._id}`;
+    const capturedAt = new Date();
+    const logEntry = await ProctorLog.create({
+      sessionId,
       userId: String(attempt.userId),
       event: `section_face_check_s${attempt.currentSectionIndex}`,
-      timestamp: new Date(),
-      ...(snapshot ? { snapshot } : {}),
+      timestamp: capturedAt,
     });
+    // The frame goes to its own collection, never onto the log row.
+    if (snapshot) {
+      await ProctorSnapshot.create({
+        sessionId,
+        userId: String(attempt.userId),
+        proctorLogId: logEntry._id,
+        image: snapshot,
+        capturedAt,
+      });
+    }
     res.json({ ok: true, sectionIndex: attempt.currentSectionIndex, withSnapshot: Boolean(snapshot) });
   } catch (err) {
     console.error('Face check error:', err.message);

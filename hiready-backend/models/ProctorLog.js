@@ -1,5 +1,13 @@
 const mongoose = require('mongoose');
 
+/**
+ * A proctoring event. Deliberately holds NO image.
+ *
+ * Webcam frames live in ProctorSnapshot. They were split out so that a query
+ * for violation counts cannot accidentally carry biometric data back with it —
+ * see models/ProctorSnapshot.js for the full rationale. Do not re-add a
+ * `snapshot` field here.
+ */
 const proctorLogSchema = new mongoose.Schema(
   {
     sessionId: {
@@ -19,12 +27,6 @@ const proctorLogSchema = new mongoose.Schema(
     timestamp: {
       type: Date,
       required: true,
-    },
-    // Optional webcam snapshot captured at the moment of the violation.
-    // Small base64 JPEG data URI (~15-30KB) — evidence trail for flagged sessions.
-    snapshot: {
-      type: String,
-      maxlength: 80000, // ~60KB base64 ceiling
     },
     receivedAt: {
       type: Date,
