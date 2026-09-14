@@ -41,7 +41,7 @@ const AssessmentLanding = () => {
     setStartingId(templateId);
     try {
       await assessmentAPI.start(templateId);
-      navigate("/assessments/take");
+      navigate("/practice/assessment/take");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to start assessment");
       setStartingId(null);

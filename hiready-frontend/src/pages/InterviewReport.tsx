@@ -212,7 +212,7 @@ const InterviewReport = () => {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <Link to="/dashboard">
+            <Link to="/mastery">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="mr-2 w-4 h-4" />
                 Back to Dashboard
@@ -226,7 +226,7 @@ const InterviewReport = () => {
               </p>
             </div>
           </div>
-          <Link to="/interview">
+          <Link to="/practice/interview">
             <Button className="bg-gradient-primary hover:opacity-90 transition-opacity">
               <MessageSquare className="mr-2 w-4 h-4" />
               Start a New Interview
@@ -665,7 +665,7 @@ const InterviewReport = () => {
         <div className="mt-8 p-6 bg-gradient-hero rounded-lg border border-border">
           <h3 className="text-lg font-semibold text-foreground mb-4">Recommended Next Steps</h3>
           <div className="grid md:grid-cols-3 gap-4">
-            <Link to="/resume-analysis" className="block">
+            <Link to="/practice/resume" className="block">
               <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
                 <CardHeader>
                   <CardTitle className="text-sm">Optimize Your Resume</CardTitle>
@@ -677,7 +677,7 @@ const InterviewReport = () => {
                 </CardContent>
               </Card>
             </Link>
-            <Link to="/interview" className="block">
+            <Link to="/practice/interview" className="block">
               <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
                 <CardHeader>
                   <CardTitle className="text-sm">Practice More</CardTitle>

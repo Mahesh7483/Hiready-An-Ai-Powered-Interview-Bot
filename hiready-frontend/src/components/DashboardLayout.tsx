@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { GraduationCap, LayoutDashboard, FileText, MessageSquare, Brain, LogOut, Menu, X, TerminalSquare, ClipboardList, History, BarChart3, NotebookPen, Trophy } from "lucide-react";
+import { GraduationCap, Target, LayoutGrid, LogOut, Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
@@ -40,22 +40,12 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
     }
   };
 
+  // Two flows, and only two. Either the app chooses the work (Mastery) or the
+  // student does (Practice). Records are no longer a third group — each lives
+  // inside the thing it belongs to.
   const navItems = [
-    { path: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { path: "/resume-analysis", label: "Resume Analysis", icon: FileText },
-    { path: "/interview", label: "Mock Interview", icon: MessageSquare },
-    { path: "/coding-interview", label: "Technical Round", icon: TerminalSquare },
-    { path: "/assessments", label: "Assessments", icon: ClipboardList },
-    { path: "/aptitude", label: "Aptitude", icon: Brain },
-  ];
-
-  // Secondary group: records & stats pages, one click away
-  const recordNavItems = [
-    { path: "/my-resumes", label: "My Resumes", icon: FileText },
-    { path: "/interview-history", label: "Interview History", icon: History },
-    { path: "/aptitude/dashboard", label: "Aptitude Stats", icon: BarChart3 },
-    { path: "/aptitude/notebook", label: "Wrong Answers", icon: NotebookPen },
-    { path: "/leaderboard", label: "Leaderboard", icon: Trophy },
+    { path: "/mastery", label: "Mastery", hint: "Today's session", icon: Target },
+    { path: "/practice", label: "Practice", hint: "Choose your own", icon: LayoutGrid },
   ];
 
   const isActive = (path: string) =>
@@ -112,46 +102,23 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
                       key={item.path}
                       to={item.path}
                       onClick={() => setIsSidebarOpen(false)}
-                      className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                      className={`flex items-start gap-3 px-4 py-3 rounded-lg transition-colors ${
                         active
                           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           : "text-sidebar-foreground hover:bg-sidebar-accent/50"
                       }`}
                     >
-                      <Icon className="w-5 h-5" />
-                      <span>{item.label}</span>
+                      <Icon className="w-5 h-5 mt-0.5 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block">{item.label}</span>
+                        <span className="block text-xs text-muted-foreground font-normal">
+                          {item.hint}
+                        </span>
+                      </span>
                     </Link>
                   );
                 })}
               </nav>
-
-              {/* My Records */}
-              <div className="px-4 pt-2">
-                <p className="px-4 mb-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  My Records
-                </p>
-                <nav className="space-y-1">
-                  {recordNavItems.map((item) => {
-                    const Icon = item.icon;
-                    const active = isActive(item.path);
-                    return (
-                      <Link
-                        key={item.path}
-                        to={item.path}
-                        onClick={() => setIsSidebarOpen(false)}
-                        className={`flex items-center gap-3 px-4 py-2 rounded-lg text-sm transition-colors ${
-                          active
-                            ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                            : "text-sidebar-foreground/80 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                        }`}
-                      >
-                        <Icon className="w-4 h-4" />
-                        <span>{item.label}</span>
-                      </Link>
-                    );
-                  })}
-                </nav>
-              </div>
             </div>
 
             {/* User Profile */}

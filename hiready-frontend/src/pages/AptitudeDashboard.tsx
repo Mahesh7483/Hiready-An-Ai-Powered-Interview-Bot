@@ -133,7 +133,7 @@ const AptitudeDashboard = () => {
         {/* Back button */}
         <Button
           variant="ghost"
-          onClick={() => navigate("/aptitude")}
+          onClick={() => navigate("/practice/aptitude")}
           className="mb-6 text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="w-4 h-4 mr-2" />
@@ -258,14 +258,14 @@ const AptitudeDashboard = () => {
 
         {/* Notebook / Leaderboard quick links */}
         <div className="grid sm:grid-cols-2 gap-4 mb-8">
-          <Button variant="outline" className="h-auto py-4 justify-start" onClick={() => navigate("/aptitude/notebook")}>
+          <Button variant="outline" className="h-auto py-4 justify-start" onClick={() => navigate("/mastery/review")}>
             <NotebookPen className="mr-3 w-5 h-5 text-destructive" />
             <span className="text-left">
               <span className="block font-semibold">Wrong-Answer Notebook</span>
               <span className="block text-xs text-muted-foreground">Review and master every question you missed</span>
             </span>
           </Button>
-          <Button variant="outline" className="h-auto py-4 justify-start" onClick={() => navigate("/leaderboard")}>
+          <Button variant="outline" className="h-auto py-4 justify-start" onClick={() => navigate("/practice/leaderboard")}>
             <Trophy className="mr-3 w-5 h-5 text-amber-500" />
             <span className="text-left">
               <span className="block font-semibold">Leaderboard</span>
@@ -280,10 +280,10 @@ const AptitudeDashboard = () => {
               No test data yet. Take a practice or test to see your analytics here.
             </p>
             <div className="flex gap-3 justify-center">
-              <Button onClick={() => navigate("/aptitude/practice")} className="bg-emerald-500 hover:bg-emerald-600 text-white">
+              <Button onClick={() => navigate("/practice/aptitude/practice")} className="bg-emerald-500 hover:bg-emerald-600 text-white">
                 Start Practice
               </Button>
-              <Button onClick={() => navigate("/aptitude/test")} className="bg-violet-600 hover:bg-violet-700 text-white">
+              <Button onClick={() => navigate("/practice/aptitude/run")} className="bg-violet-600 hover:bg-violet-700 text-white">
                 Take a Test
               </Button>
             </div>

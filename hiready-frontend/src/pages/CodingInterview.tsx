@@ -323,7 +323,7 @@ const CodingInterview = () => {
   const handleExitInterview = () => {
     if (!window.confirm("End the coding session and return to the dashboard? Your current session progress will be lost.")) return;
     try { document.exitFullscreen?.(); } catch { /* ignore */ }
-    navigate("/dashboard");
+    navigate("/mastery");
   };
 
   useEffect(() => {
@@ -375,7 +375,7 @@ const CodingInterview = () => {
               <div className="flex gap-2">
                 <Button onClick={()=>{setShowReport(false); if(currentQuestionIndex < totalQuestions-1) goNext();}}>Next Question</Button>
                 <Button variant="outline" onClick={()=> setShowReport(false)}>Back to Editor</Button>
-                <Button variant="outline" onClick={() => navigate("/dashboard")}>
+                <Button variant="outline" onClick={() => navigate("/mastery")}>
                   <ArrowLeft className="w-4 h-4 mr-1" />
                   Dashboard
                 </Button>
@@ -445,7 +445,7 @@ const CodingInterview = () => {
               {questions.length>0 && <p className="text-xs text-muted-foreground">Leave empty to practice with first available question. Selected questions will be used in interview order.</p>}
             </div>
             <div className="flex gap-3 pt-4">
-              <Button variant="outline" onClick={() => navigate("/dashboard")}>
+              <Button variant="outline" onClick={() => navigate("/mastery")}>
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Back to Dashboard
               </Button>
@@ -495,7 +495,7 @@ const CodingInterview = () => {
               </div>
             </div>
             <div className="flex gap-3 pt-4 border-t border-border">
-              <Button variant="ghost" onClick={() => navigate("/dashboard")}>
+              <Button variant="ghost" onClick={() => navigate("/mastery")}>
                 <ArrowLeft className="w-4 h-4 mr-1" />
                 Dashboard
               </Button>

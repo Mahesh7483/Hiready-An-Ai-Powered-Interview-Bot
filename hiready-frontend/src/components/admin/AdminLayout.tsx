@@ -9,10 +9,12 @@ import {
   ArrowLeft,
   Layers,
   Code,
+  Target,
 } from "lucide-react";
 
 const NAV_ITEMS = [
   { to: "/admin", label: "Overview", icon: LayoutDashboard, end: true },
+  { to: "/admin/mastery", label: "Mastery", icon: Target, end: false },
   { to: "/admin/users", label: "Users", icon: UsersIcon, end: false },
   { to: "/admin/questions", label: "Question Bank", icon: BookOpen, end: false },
   { to: "/admin/coding-questions", label: "Coding Bank", icon: Code, end: false },
@@ -28,7 +30,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
       {/* Sidebar */}
       <aside className="w-60 shrink-0 border-r border-border bg-card hidden md:flex md:flex-col">
         <div className="p-5 border-b border-border">
-          <Link to="/dashboard" className="flex items-center gap-2 group">
+          <Link to="/mastery" className="flex items-center gap-2 group">
             <div className="w-8 h-8 rounded-lg bg-gradient-primary flex items-center justify-center">
               <span className="text-white text-xs font-bold">HR</span>
             </div>
@@ -61,7 +63,7 @@ const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 
         <div className="p-3 border-t border-border">
           <NavLink
-            to="/dashboard"
+            to="/mastery"
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />

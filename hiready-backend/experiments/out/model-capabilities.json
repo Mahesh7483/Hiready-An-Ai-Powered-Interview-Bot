@@ -1,0 +1,140 @@
+{
+  "probedAtUtc": "2026-09-08T08:12:57.701Z",
+  "models": {
+    "groq/compound": {
+      "probedAt": "2026-09-08T08:12:57.701Z",
+      "capabilities": {
+        "reasoningEffort": false,
+        "structuredJsonObject": false,
+        "structuredBestEffort": false,
+        "structuredStrict": false
+      },
+      "evidence": {
+        "reasoningEffort": {
+          "result": "rejected",
+          "detail": "http_400 - 400 {\"error\":{\"message\":\"`reasoning_effort` is not supported with this model\",\"type\":\"invalid_request_error\"}}"
+        },
+        "structuredJsonObject": {
+          "result": "accepted_but_unenforced",
+          "detail": "output was not JSON"
+        },
+        "structuredBestEffort": {
+          "result": "rejected",
+          "detail": "http_400 - 400 {\"error\":{\"message\":\"this model does not support response format `json_schema`. see supported models at https://console.groq.com/docs/structured-outputs#sup"
+        },
+        "structuredStrict": {
+          "result": "rejected",
+          "detail": "http_400 - 400 {\"error\":{\"message\":\"this model does not support response format `json_schema`. see supported models at https://console.groq.com/docs/structured-outputs#sup"
+        }
+      }
+    },
+    "groq/compound-mini": {
+      "probedAt": "2026-09-08T08:12:57.701Z",
+      "capabilities": {
+        "reasoningEffort": false,
+        "structuredJsonObject": true,
+        "structuredBestEffort": false,
+        "structuredStrict": false
+      },
+      "evidence": {
+        "reasoningEffort": {
+          "result": "rejected",
+          "detail": "http_400 - 400 {\"error\":{\"message\":\"`reasoning_effort` is not supported with this model\",\"type\":\"invalid_request_error\"}}"
+        },
+        "structuredJsonObject": {
+          "result": "supported",
+          "detail": "returned parseable JSON"
+        },
+        "structuredBestEffort": {
+          "result": "rejected",
+          "detail": "http_400 - 400 {\"error\":{\"message\":\"this model does not support response format `json_schema`. see supported models at https://console.groq.com/docs/structured-outputs#sup"
+        },
+        "structuredStrict": {
+          "result": "rejected",
+          "detail": "http_400 - 400 {\"error\":{\"message\":\"this model does not support response format `json_schema`. see supported models at https://console.groq.com/docs/structured-outputs#sup"
+        }
+      }
+    },
+    "openai/gpt-oss-120b": {
+      "probedAt": "2026-09-08T08:12:57.701Z",
+      "capabilities": {
+        "reasoningEffort": true,
+        "structuredJsonObject": true,
+        "structuredBestEffort": true,
+        "structuredStrict": true
+      },
+      "evidence": {
+        "reasoningEffort": {
+          "result": "supported",
+          "detail": "parameter accepted"
+        },
+        "structuredJsonObject": {
+          "result": "supported",
+          "detail": "returned parseable JSON"
+        },
+        "structuredBestEffort": {
+          "result": "supported",
+          "detail": "output satisfied the schema"
+        },
+        "structuredStrict": {
+          "result": "supported",
+          "detail": "output satisfied the schema"
+        }
+      }
+    },
+    "openai/gpt-oss-20b": {
+      "probedAt": "2026-09-08T08:12:57.701Z",
+      "capabilities": {
+        "reasoningEffort": true,
+        "structuredJsonObject": true,
+        "structuredBestEffort": true,
+        "structuredStrict": true
+      },
+      "evidence": {
+        "reasoningEffort": {
+          "result": "supported",
+          "detail": "parameter accepted"
+        },
+        "structuredJsonObject": {
+          "result": "supported",
+          "detail": "returned parseable JSON"
+        },
+        "structuredBestEffort": {
+          "result": "supported",
+          "detail": "output satisfied the schema"
+        },
+        "structuredStrict": {
+          "result": "supported",
+          "detail": "output satisfied the schema"
+        }
+      }
+    },
+    "qwen/qwen3.8-27b": {
+      "probedAt": "2026-09-08T08:12:57.701Z",
+      "capabilities": {
+        "reasoningEffort": true,
+        "structuredJsonObject": true,
+        "structuredBestEffort": true,
+        "structuredStrict": true
+      },
+      "evidence": {
+        "reasoningEffort": {
+          "result": "supported",
+          "detail": "parameter accepted"
+        },
+        "structuredJsonObject": {
+          "result": "supported",
+          "detail": "returned parseable JSON"
+        },
+        "structuredBestEffort": {
+          "result": "supported",
+          "detail": "output satisfied the schema"
+        },
+        "structuredStrict": {
+          "result": "supported",
+          "detail": "output satisfied the schema"
+        }
+      }
+    }
+  }
+}

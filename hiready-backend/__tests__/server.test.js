@@ -78,5 +78,7 @@ describe("AI routes validation", () => {
 
 afterAll(async () => {
   const mongoose = require("mongoose");
-  await mongoose.disconnect().catch(() => {});
+  if (mongoose.connection.readyState === 1) {
+    await mongoose.disconnect().catch(() => {});
+  }
 });

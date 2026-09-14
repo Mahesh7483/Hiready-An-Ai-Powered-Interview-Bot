@@ -63,13 +63,15 @@ function validateMessages(messages) {
 
 // POST /api/ai/star-coach — STAR-method feedback on a behavioral answer
 router.post('/star-coach', async (req, res) => {
-  const { question, answer } = req.body;
+  const { question, answer, maxTokens: clientMaxTokens } = req.body;
   if (!question || typeof question !== 'string' || question.length > 2000) {
     return res.status(400).json({ error: 'question is required (max 2000 chars)' });
   }
   if (!answer || typeof answer !== 'string' || answer.length > 8000) {
     return res.status(400).json({ error: 'answer is required (max 8000 chars)' });
   }
+
+  const tokenBudget = Math.min(Math.max(parseInt(clientMaxTokens, 10) || 400, 80), 1000);
 
   try {
     const response = await groqChat([
@@ -78,7 +80,7 @@ router.post('/star-coach', async (req, res) => {
         content: 'You are a behavioral interview coach. Analyze the candidate answer using the STAR method (Situation, Task, Action, Result). Reply with STRICT JSON only, no markdown: {"situation":{"present":true/false,"note":"..."},"task":{"present":true/false,"note":"..."},"action":{"present":true/false,"note":"..."},"result":{"present":true/false,"note":"..."},"score":<0-10>,"improvedAnswer":"a rewritten 3-4 sentence STAR version of their answer"}',
       },
       { role: 'user', content: `Interview question: ${question}\n\nCandidate answer: ${answer}` },
-    ], { temperature: 0.4, maxTokens: 700 });
+    ], { temperature: 0.4, maxTokens: tokenBudget });
 
     const raw = response.choices?.[0]?.message?.content || '';
     const match = raw.match(/\{[\s\S]*\}/);
@@ -362,7 +364,8 @@ function validateResumeAnalysis(a) {
 
 // POST /api/ai/resume-analyze — ATS analysis runs server-side
 router.post('/resume-analyze', async (req, res) => {
-  const { resumeText, targetRole, experienceLevel, jobDescription } = req.body;
+  const { resumeText, targetRole, experienceLevel, jobDescription, maxTokens: clientMaxTokens } = req.body;
+  const tokenBudget = Math.min(Math.max(parseInt(clientMaxTokens, 10) || 1200, 200), 4000);
 
   if (
     !resumeText ||
@@ -407,7 +410,7 @@ router.post('/resume-analyze', async (req, res) => {
           RESUME_ANALYSIS_PROMPT(trimmedResume, safeRole, safeLevel) +
           jdBlock +
           (attempt === 1 ? '\n\nIMPORTANT: Your previous response was not valid JSON. Respond ONLY with the raw JSON object.' : '');
-        const analysis = await groqJsonTask(prompt, { temperature: 0.3, maxTokens: 4000, maxAttempts: 2 });
+        const analysis = await groqJsonTask(prompt, { temperature: 0.3, maxTokens: tokenBudget, maxAttempts: 2 });
         validateResumeAnalysis(analysis);
         console.log(`Resume analyze OK in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (attempt ${attempt + 1})`);
         return res.json(analysis);

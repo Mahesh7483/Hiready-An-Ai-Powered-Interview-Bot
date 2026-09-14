@@ -47,4 +47,20 @@ const InterviewSessionSchema = new mongoose.Schema(
 
 InterviewSessionSchema.index({ user: 1, createdAt: -1 });
 
+// Cascade deletion hook: purge associated ProctorLog records and webcam snapshots
+InterviewSessionSchema.pre('findOneAndDelete', async function () {
+  try {
+    const doc = await this.model.findOne(this.getQuery());
+    if (doc) {
+      const ProctorLog = mongoose.model('ProctorLog');
+      await ProctorLog.deleteMany({
+        $or: [{ sessionId: doc.sessionId }, { sessionId: String(doc._id) }],
+        userId: doc.user
+      });
+    }
+  } catch (err) {
+    console.error('Cascade deletion hook error in InterviewSession:', err.message);
+  }
+});
+
 module.exports = mongoose.model('InterviewSession', InterviewSessionSchema);

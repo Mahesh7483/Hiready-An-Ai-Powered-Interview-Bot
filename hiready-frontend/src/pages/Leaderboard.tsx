@@ -196,7 +196,7 @@ const Leaderboard = () => {
         </Card>
 
         <div className="mt-6 text-center">
-          <Button variant="outline" onClick={() => window.location.assign("/aptitude/test")}>
+          <Button variant="outline" onClick={() => window.location.assign("/practice/aptitude/run")}>
             Climb the ranks — take a timed test
           </Button>
         </div>

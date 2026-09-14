@@ -1,6 +1,7 @@
-﻿const express = require('express');
+const express = require('express');
 const mongoose = require('mongoose');
 const InterviewSession = require('../models/InterviewSession');
+const ProctorLog = require('../models/ProctorLog');
 const { requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
@@ -208,15 +209,98 @@ router.get('/sessions/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/interviews/sessions/:id
+// Helper for transactional or explicit parallel cascading deletion
+async function executeCascadeDeletion(sessionDoc, userId) {
+  const proctorQuery = {
+    $or: [
+      { sessionId: sessionDoc.sessionId },
+      { sessionId: String(sessionDoc._id) }
+    ],
+    userId: userId
+  };
+
+  // Try replica-set transaction first
+  let dbSession = null;
+  try {
+    const topologyType = mongoose.connection.client?.topology?.description?.type || '';
+    const isReplicaSet = topologyType.includes('ReplicaSet') || topologyType.includes('Sharded');
+
+    if (isReplicaSet) {
+      dbSession = await mongoose.startSession();
+      dbSession.startTransaction();
+
+      const sessionOpts = { session: dbSession };
+      const proctorResult = await ProctorLog.deleteMany(proctorQuery, sessionOpts);
+      await InterviewSession.deleteOne({ _id: sessionDoc._id }, sessionOpts);
+
+      await dbSession.commitTransaction();
+      return {
+        success: true,
+        deletedSessionId: sessionDoc.sessionId,
+        purgedLogsCount: proctorResult.deletedCount || 0
+      };
+    }
+  } catch (txErr) {
+    if (dbSession) {
+      try { await dbSession.abortTransaction(); } catch {}
+    }
+    // Transaction not supported on standalone local Mongo; fall through to parallel cleanup
+  } finally {
+    if (dbSession) {
+      try { dbSession.endSession(); } catch {}
+    }
+  }
+
+  // Explicit parallel cleanup: purges both ProctorLog snapshots and InterviewSession
+  const [proctorResult] = await Promise.all([
+    ProctorLog.deleteMany(proctorQuery),
+    InterviewSession.deleteOne({ _id: sessionDoc._id })
+  ]);
+
+  return {
+    success: true,
+    deletedSessionId: sessionDoc.sessionId,
+    purgedLogsCount: proctorResult.deletedCount || 0
+  };
+}
+
+// DELETE /api/interviews/sessions/:id — cascade purge with ownership check
 router.delete('/sessions/:id', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
   try {
-    const deleted = await InterviewSession.findOneAndDelete({ _id: req.params.id, user: req.user.id });
-    if (!deleted) return res.status(404).json({ error: 'Not found' });
-    res.json({ message: 'Deleted' });
+    const session = await InterviewSession.findById(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Interview session not found' });
+
+    // Strict ownership verification
+    if (String(session.user) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden: You do not have permission to delete this session' });
+    }
+
+    const result = await executeCascadeDeletion(session, req.user.id);
+    res.json({ message: 'Deleted', ...result });
   } catch (err) {
     console.error('Delete interview session error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/interviews/sessions/by-session-id/:sessionId — cascade purge by string sessionId
+router.delete('/sessions/by-session-id/:sessionId', async (req, res) => {
+  const { sessionId } = req.params;
+  if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+  try {
+    const session = await InterviewSession.findOne({ sessionId });
+    if (!session) return res.status(404).json({ error: 'Interview session not found' });
+
+    // Strict ownership verification
+    if (String(session.user) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden: You do not have permission to delete this session' });
+    }
+
+    const result = await executeCascadeDeletion(session, req.user.id);
+    res.json({ message: 'Deleted', ...result });
+  } catch (err) {
+    console.error('Delete interview session by sessionId error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

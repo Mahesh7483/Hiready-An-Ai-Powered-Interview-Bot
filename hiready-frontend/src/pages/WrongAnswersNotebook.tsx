@@ -132,7 +132,7 @@ const WrongAnswersNotebook = () => {
               : ""}
           </p>
           <Button variant="outline" size="sm" asChild>
-            <Link to="/aptitude/practice">
+            <Link to="/practice/aptitude/practice">
               <RefreshCw className="mr-2 w-4 h-4" /> Practice these topics
             </Link>
           </Button>

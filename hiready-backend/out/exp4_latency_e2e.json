@@ -1,0 +1,86 @@
+{
+  "experiment": "exp4_latency_e2e",
+  "reps": 30,
+  "timestamp": "2026-09-09T04:13:37.398Z",
+  "quartileMethod": "zero-based (n-1)p linear interpolation",
+  "endpoints": {
+    "resume-analyze": {
+      "layer": "backend + external LLM",
+      "totalRequests": 30,
+      "successCount": 29,
+      "successRatePct": 96.7,
+      "p50_median_ms": 27149.53,
+      "q1_ms": 26032.1,
+      "q3_ms": 28056.53,
+      "iqr_ms": 2024.43,
+      "p95_ms": 29019.84,
+      "min_ms": 16386.73,
+      "max_ms": 38303.13
+    },
+    "interview-turn (chat)": {
+      "layer": "backend + external LLM",
+      "totalRequests": 30,
+      "successCount": 30,
+      "successRatePct": 100,
+      "p50_median_ms": 4242.46,
+      "q1_ms": 4141.6,
+      "q3_ms": 4549.45,
+      "iqr_ms": 407.85,
+      "p95_ms": 4702.65,
+      "min_ms": 3513.74,
+      "max_ms": 5201.63
+    },
+    "star-coach": {
+      "layer": "backend + external LLM",
+      "totalRequests": 30,
+      "successCount": 30,
+      "successRatePct": 100,
+      "p50_median_ms": 5704.73,
+      "q1_ms": 5518.57,
+      "q3_ms": 5886.57,
+      "iqr_ms": 367.99,
+      "p95_ms": 6117.54,
+      "min_ms": 3965.05,
+      "max_ms": 8941.63
+    },
+    "code-execute (javascript)": {
+      "layer": "backend sandbox only",
+      "totalRequests": 30,
+      "successCount": 30,
+      "successRatePct": 100,
+      "p50_median_ms": 95.59,
+      "q1_ms": 92.13,
+      "q3_ms": 99.45,
+      "iqr_ms": 7.33,
+      "p95_ms": 105.74,
+      "min_ms": 88.55,
+      "max_ms": 157.2
+    },
+    "code-execute (python)": {
+      "layer": "backend sandbox only",
+      "totalRequests": 30,
+      "successCount": 30,
+      "successRatePct": 100,
+      "p50_median_ms": 71.22,
+      "q1_ms": 67.78,
+      "q3_ms": 78.97,
+      "iqr_ms": 11.19,
+      "p95_ms": 99.8,
+      "min_ms": 61.61,
+      "max_ms": 141.44
+    },
+    "stt-token mint": {
+      "layer": "backend + external ASR auth",
+      "totalRequests": 30,
+      "successCount": 30,
+      "successRatePct": 100,
+      "p50_median_ms": 349.97,
+      "q1_ms": 309.98,
+      "q3_ms": 715.39,
+      "iqr_ms": 405.41,
+      "p95_ms": 1684.34,
+      "min_ms": 280.82,
+      "max_ms": 1904.15
+    }
+  }
+}

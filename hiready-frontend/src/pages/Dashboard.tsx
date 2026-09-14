@@ -155,13 +155,13 @@ const Dashboard = () => {
               ))}
             </div>
             <div className="flex flex-wrap gap-x-6 gap-y-1 mt-5 text-sm text-primary-foreground/80">
-              <Link to="/my-resumes" className="hover:text-primary-foreground underline-offset-2 hover:underline">
+              <Link to="/practice/resume/library" className="hover:text-primary-foreground underline-offset-2 hover:underline">
                 {resumeHistory.length} resume{resumeHistory.length === 1 ? "" : "s"} analyzed
               </Link>
-              <Link to="/interview-history" className="hover:text-primary-foreground underline-offset-2 hover:underline">
+              <Link to="/practice/interview/history" className="hover:text-primary-foreground underline-offset-2 hover:underline">
                 {totalInterviews} interview{totalInterviews === 1 ? "" : "s"} done
               </Link>
-              <Link to="/aptitude/dashboard" className="hover:text-primary-foreground underline-offset-2 hover:underline">
+              <Link to="/practice/aptitude/stats" className="hover:text-primary-foreground underline-offset-2 hover:underline">
                 {aptitude?.totalTests ?? 0} aptitude test{(aptitude?.totalTests ?? 0) === 1 ? "" : "s"}
               </Link>
             </div>
@@ -174,7 +174,7 @@ const Dashboard = () => {
             <Target className="w-4 h-4 text-destructive" />
             <span className="text-sm text-muted-foreground mr-1">Focus areas:</span>
             {weakTopics.map((t) => (
-              <Link key={t.topic} to="/aptitude/practice">
+              <Link key={t.topic} to="/practice/aptitude/practice">
                 <Badge
                   variant="outline"
                   className="cursor-pointer hover:border-destructive/60 hover:text-destructive transition-colors"
@@ -200,15 +200,15 @@ const Dashboard = () => {
               <CardDescription>Timed tests, topic drills & daily streaks</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
-              <Link to="/aptitude" className="block">
+              <Link to="/practice/aptitude" className="block">
                 <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
                   Take Test <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
               <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
-                <Link to="/leaderboard" className="hover:text-foreground underline-offset-2 hover:underline">Leaderboard</Link>
-                <Link to="/aptitude/notebook" className="hover:text-foreground underline-offset-2 hover:underline">Wrong Answers</Link>
-                <Link to="/aptitude/dashboard" className="hover:text-foreground underline-offset-2 hover:underline">My Stats</Link>
+                <Link to="/practice/leaderboard" className="hover:text-foreground underline-offset-2 hover:underline">Leaderboard</Link>
+                <Link to="/mastery/review" className="hover:text-foreground underline-offset-2 hover:underline">Wrong Answers</Link>
+                <Link to="/practice/aptitude/stats" className="hover:text-foreground underline-offset-2 hover:underline">My Stats</Link>
               </div>
             </CardContent>
           </Card>
@@ -222,7 +222,7 @@ const Dashboard = () => {
               <CardDescription>Coding questions with run & submit feedback</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
-              <Link to="/coding-interview" className="block">
+              <Link to="/practice/coding" className="block">
                 <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
                   Start Practice <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
@@ -239,7 +239,7 @@ const Dashboard = () => {
               <CardDescription>Proctored, multi-section evaluations</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
-              <Link to="/assessments" className="block">
+              <Link to="/practice/assessment" className="block">
                 <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
                   Take Assessment <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
@@ -262,14 +262,14 @@ const Dashboard = () => {
               <CardDescription>ATS scoring, keyword gaps & AI rewrites</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
-              <Link to="/resume-analysis" className="block">
+              <Link to="/practice/resume" className="block">
                 <Button className="w-full bg-gradient-accent hover:opacity-90 transition-opacity">
                   New Analysis <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
               {resumeHistory.length > 0 && (
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
-                  <Link to="/my-resumes" className="hover:text-foreground underline-offset-2 hover:underline">
+                  <Link to="/practice/resume/library" className="hover:text-foreground underline-offset-2 hover:underline">
                     My Resumes ({resumeHistory.length})
                   </Link>
                 </div>
@@ -286,14 +286,14 @@ const Dashboard = () => {
               <CardDescription>Strict AI interviewer with live proctoring</CardDescription>
             </CardHeader>
             <CardContent className="pt-0">
-              <Link to="/interview" className="block">
+              <Link to="/practice/interview" className="block">
                 <Button className="w-full bg-gradient-primary hover:opacity-90 transition-opacity">
                   Start Interview <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
               {hasCompletedInterview && (
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-xs text-muted-foreground">
-                  <Link to="/interview-history" className="hover:text-foreground underline-offset-2 hover:underline">
+                  <Link to="/practice/interview/history" className="hover:text-foreground underline-offset-2 hover:underline">
                     History ({totalInterviews})
                   </Link>
                 </div>
@@ -304,7 +304,7 @@ const Dashboard = () => {
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <Link to="/my-resumes" className="block">
+          <Link to="/practice/resume/library" className="block">
           <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Latest Resume Score</CardTitle>
@@ -332,7 +332,7 @@ const Dashboard = () => {
           </Card>
           </Link>
 
-          <Link to="/interview-history" className="block">
+          <Link to="/practice/interview/history" className="block">
           <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Interviews</CardTitle>
@@ -358,7 +358,7 @@ const Dashboard = () => {
           </Card>
           </Link>
 
-          <Link to="/aptitude/dashboard" className="block">
+          <Link to="/practice/aptitude/stats" className="block">
           <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Aptitude Accuracy</CardTitle>
@@ -386,7 +386,7 @@ const Dashboard = () => {
           </Card>
           </Link>
 
-          <Link to="/aptitude" className="block">
+          <Link to="/practice/aptitude" className="block">
           <Card className="border border-border h-full hover:border-primary/40 hover:shadow-md transition-shadow">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium">Practice Streak</CardTitle>
