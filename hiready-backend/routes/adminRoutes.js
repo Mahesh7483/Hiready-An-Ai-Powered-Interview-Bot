@@ -17,6 +17,7 @@ const ResumeAnalysis = require('../models/ResumeAnalysis');
 const AssessmentAttempt = require('../models/AssessmentAttempt');
 const CodingSubmission = require('../models/CodingSubmission');
 const SavedQuestion = require('../models/SavedQuestion');
+const AptitudeAttempt = require('../models/AptitudeAttempt');
 
 // Every route below requires a valid JWT AND the admin role (fresh DB check)
 router.use(requireAdmin);
@@ -400,6 +401,11 @@ router.delete('/users/:id', async (req, res) => {
       assessmentAttempts: () => AssessmentAttempt.deleteMany({ userId: id }),
       codingSubmissions: () => CodingSubmission.deleteMany({ userId: id }),
       savedQuestions: () => SavedQuestion.deleteMany({ userId: id }),
+      // Arrived with the Practice/Mastery merge, which is exactly how a new
+      // user-owned collection slips past a hand-maintained cascade. The guard
+      // in __tests__/userIdIntegrity.test.js now derives this list from the
+      // models rather than trusting anyone to remember.
+      aptitudeAttempts: () => AptitudeAttempt.deleteMany({ userId: id }),
       // Hiring-side references: a deleted candidate must not keep live consents,
       // applications, memberships or pending invites.
       consents: () => CandidateCompanyConsent.deleteMany({ candidateId: id }),

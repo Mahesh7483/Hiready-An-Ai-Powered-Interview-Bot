@@ -16,29 +16,58 @@ const path = require('path');
 const BACKEND = path.resolve(__dirname, '..');
 const read = (rel) => fs.readFileSync(path.join(BACKEND, rel), 'utf8');
 
-/** Every model file and the user-reference fields it declares. */
-const USER_REF_MODELS = [
-  ['models/TestResult.js', 'userId'],
-  ['models/SavedQuestion.js', 'userId'],
-  ['models/ProctorLog.js', 'userId'],
-  ['models/ProctorSnapshot.js', 'userId'],
-  ['models/CodingSubmission.js', 'userId'],
-  ['models/AssessmentAttempt.js', 'userId'],
-  ['models/InterviewSession.js', 'user'],
-  ['models/ResumeAnalysis.js', 'user'],
-  ['models/CandidateCompanyConsent.js', 'candidateId'],
-  ['models/Application.js', 'candidateId'],
-  ['models/CompanyMembership.js', 'userId'],
-];
+/**
+ * Fields that mean "this row belongs to that person". Everything else that
+ * points at a User — createdBy, actorId, adminId, grantedBy, invitedBy,
+ * acceptedBy, interestBy — records who ACTED, not who is described. Cascading
+ * on those would delete a company's invite because an admin was removed.
+ */
+const OWNERSHIP_FIELDS = ['userId', 'user', 'candidateId'];
+
+/**
+ * Ownership references deliberately left out of the delete cascade, each with
+ * the reason. Anything not listed here must be cascaded.
+ */
+const NOT_CASCADED = {
+  'DisclosureAudit.candidateId':
+    'records who saw this candidate and under what consent; must outlive both',
+};
+
+/**
+ * Derived from the schemas, never hand-maintained.
+ *
+ * The previous version of this file listed the models by hand, which is
+ * precisely how models/AptitudeAttempt.js arrived with the Practice/Mastery
+ * merge holding a userId that nothing deleted. A list someone has to remember
+ * to update is not a guard.
+ */
+function userReferences() {
+  const dir = path.join(BACKEND, 'models');
+  const out = [];
+  fs.readdirSync(dir).filter((f) => f.endsWith('.js')).forEach((file) => {
+    const src = fs.readFileSync(path.join(dir, file), 'utf8');
+    const re = /(\w+)\s*:\s*\{[^{}]*ref:\s*'User'[^{}]*\}/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      out.push({ model: file.replace(/\.js$/, ''), field: m[1], file: `models/${file}`, decl: m[0] });
+    }
+  });
+  return out;
+}
+
+const REFERENCES = userReferences();
+const OWNED = REFERENCES.filter((r) => OWNERSHIP_FIELDS.includes(r.field));
 
 describe('user references are uniformly ObjectId', () => {
-  test.each(USER_REF_MODELS)('%s declares %s as ObjectId', (file, field) => {
-    const src = read(file);
-    const decl = new RegExp(`${field}:\\s*\\{[^}]*type:\\s*mongoose\\.Schema\\.Types\\.ObjectId`, 's');
-    expect(src).toMatch(decl);
+  test('the scan actually found the models', () => {
+    // A regex that silently matches nothing would make every test below vacuous.
+    expect(OWNED.length).toBeGreaterThanOrEqual(12);
+  });
+
+  test.each(OWNED.map((r) => [r.file, r.field, r]))('%s declares %s as ObjectId', (file, field, ref) => {
+    expect(ref.decl).toMatch(/type:\s*mongoose\.Schema\.Types\.ObjectId/);
     // A String-typed user reference is what caused the drift in the first place.
-    const asString = new RegExp(`${field}:\\s*\\{[^}]*type:\\s*String`, 's');
-    expect(src).not.toMatch(asString);
+    expect(ref.decl).not.toMatch(/type:\s*String/);
   });
 });
 
@@ -69,21 +98,23 @@ describe('the migration exists and is honest about its limits', () => {
 
 describe('deleting a user is complete and reports what it did', () => {
   const src = read('routes/adminRoutes.js');
-  const cascade = src.slice(src.indexOf("router.delete('/users/:id'"), src.indexOf("router.delete('/users/:id'") + 3000);
+  const cascade = src.slice(src.indexOf("router.delete('/users/:id'"), src.indexOf("router.delete('/users/:id'") + 4000);
 
-  test.each([
-    'ProctorSnapshot',          // biometric frames — the worst omission
-    'CandidateCompanyConsent',
-    'Application',
-    'CompanyMembership',
-  ])('the cascade covers %s', (model) => {
-    expect(cascade).toMatch(new RegExp(`${model}\\.deleteMany`));
+  test.each(
+    OWNED
+      .filter((r) => !NOT_CASCADED[`${r.model}.${r.field}`])
+      .map((r) => [r.model, r.field])
+  )('the cascade covers %s.%s', (model, field) => {
+    // Derived from the schemas, so a collection added later cannot quietly
+    // escape deletion the way ProctorSnapshot (biometric webcam frames) and
+    // then AptitudeAttempt both did.
+    expect(cascade).toMatch(new RegExp(`${model}\\.deleteMany\\(\\{\\s*${field}:`));
   });
 
-  test('DisclosureAudit is deliberately NOT cascaded', () => {
-    // It records who saw this candidate's data and under what consent, and must
-    // outlive both the consent and the account.
-    expect(cascade).not.toMatch(/DisclosureAudit\.deleteMany/);
+  test.each(Object.entries(NOT_CASCADED))('%s stays out of the cascade — %s', (ref) => {
+    // Exclusions must be deliberate and reasoned, not accidental.
+    const [model] = ref.split('.');
+    expect(cascade).not.toMatch(new RegExp(`${model}\\.deleteMany`));
   });
 
   test('the response carries per-collection deletedCount', () => {

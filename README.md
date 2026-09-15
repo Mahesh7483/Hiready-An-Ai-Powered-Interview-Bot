@@ -81,6 +81,7 @@ records who was disclosed, to whom, what, when, and under which consent.
 | `ADMIN_EMAILS` | backend | optional | Comma-separated emails auto-promoted to admin |
 | `CORS_ORIGINS` | backend | optional | Allowed browser origins (localhost defaults) |
 | `ALLOW_UNSAFE_SANDBOX` | backend | optional | Linux+production refuses unsandboxed code execution unless `1` |
+| `PROCTOR_SNAPSHOT_RETENTION_DAYS` | backend | optional | How long webcam frames survive before the TTL index drops them (default `90`). Biometric data — set it to the shortest period your jurisdiction and policy allow, not the longest |
 | `VITE_API_URL` | frontend | ✅ | API base URL |
 | `VITE_FIREBASE_*` | frontend | for Google sign-in | Firebase web config (public identifiers) |
 

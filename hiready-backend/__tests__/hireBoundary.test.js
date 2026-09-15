@@ -127,4 +127,31 @@ describe('recruiter data boundary', () => {
       expect(findForbiddenPath(path.join(FIXTURES, 'clean.js'))).toBeNull();
     });
   });
+
+  describe('the policy table describes models that actually exist', () => {
+    /**
+     * The forbidden list is matched by MODEL FILE NAME while walking the
+     * require graph, so a name with no file behind it can never match and the
+     * check silently under-enforces.
+     *
+     * This was not hypothetical: policy/dataAccess.js named AptitudeAttempt in
+     * the practiceHistory row while models/AptitudeAttempt.js lived only on an
+     * unmerged branch. For as long as that lasted the boundary test reported
+     * clean whether or not anything under /hire could reach aptitude history.
+     */
+    test('every model named anywhere in the table has a file', () => {
+      const missing = [...new Set(POLICY.flatMap((row) => row.models))]
+        .filter((name) => !fs.existsSync(path.join(__dirname, '..', 'models', `${name}.js`)));
+      expect(missing).toEqual([]);
+    });
+
+    test('the forbidden list is non-empty and all of it resolves', () => {
+      // A list that silently emptied itself would make the whole walk vacuous.
+      const forbidden = forbiddenForRecruiters();
+      expect(forbidden.length).toBeGreaterThan(0);
+      forbidden.forEach((name) => {
+        expect(fs.existsSync(path.join(__dirname, '..', 'models', `${name}.js`))).toBe(true);
+      });
+    });
+  });
 });
