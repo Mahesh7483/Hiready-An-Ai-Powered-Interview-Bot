@@ -152,8 +152,8 @@ const AptitudeDashboard = () => {
           <Card className="border-2 border-border">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-violet-500/20 flex items-center justify-center">
-                  <Hash className="w-5 h-5 text-violet-500" />
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Hash className="w-5 h-5 text-primary" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Total Tests</p>
@@ -166,8 +166,8 @@ const AptitudeDashboard = () => {
           <Card className="border-2 border-border">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-amber-500/20 flex items-center justify-center">
-                  <Award className="w-5 h-5 text-amber-500" />
+                <div className="w-10 h-10 rounded-full bg-warning/20 flex items-center justify-center">
+                  <Award className="w-5 h-5 text-warning" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Avg Score</p>
@@ -180,8 +180,8 @@ const AptitudeDashboard = () => {
           <Card className="border-2 border-border">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-emerald-500/20 flex items-center justify-center">
-                  <Target className="w-5 h-5 text-emerald-500" />
+                <div className="w-10 h-10 rounded-full bg-success/20 flex items-center justify-center">
+                  <Target className="w-5 h-5 text-success" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Accuracy</p>
@@ -194,8 +194,8 @@ const AptitudeDashboard = () => {
           <Card className="border-2 border-border">
             <CardContent className="pt-6">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-blue-500/20 flex items-center justify-center">
-                  <Clock className="w-5 h-5 text-blue-500" />
+                <div className="w-10 h-10 rounded-full bg-primary/20 flex items-center justify-center">
+                  <Clock className="w-5 h-5 text-primary" />
                 </div>
                 <div>
                   <p className="text-xs text-muted-foreground">Avg Time/Q</p>
@@ -208,17 +208,17 @@ const AptitudeDashboard = () => {
 
         {/* Streak + Badges */}
         <div className="grid md:grid-cols-3 gap-4 mb-8">
-          <Card className="border-2 border-orange-500/30 bg-orange-500/5">
+          <Card className="border-2 border-warning/30 bg-warning/5">
             <CardContent className="pt-6 flex items-center gap-4">
-              <div className="w-14 h-14 rounded-full bg-orange-500/20 flex items-center justify-center">
-                <Flame className={`w-7 h-7 ${streak > 0 ? "text-orange-500" : "text-muted-foreground/40"}`} />
+              <div className="w-14 h-14 rounded-full bg-warning/20 flex items-center justify-center">
+                <Flame className={`w-7 h-7 ${streak > 0 ? "text-warning" : "text-muted-foreground/40"}`} />
               </div>
               <div>
                 <p className="text-xs text-muted-foreground">Practice Streak</p>
                 <p className="text-3xl font-bold text-foreground">
                   {streak}<span className="text-sm font-normal text-muted-foreground"> day{streak === 1 ? "" : "s"}</span>
                 </p>
-                {streak >= 2 && <p className="text-xs text-orange-500 font-medium">Keep it burning!</p>}
+                {streak >= 2 && <p className="text-xs text-warning font-medium">Keep it burning!</p>}
               </div>
             </CardContent>
           </Card>
@@ -227,7 +227,7 @@ const AptitudeDashboard = () => {
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between w-full">
                 <div className="flex items-center gap-2">
-                  <Trophy className="w-5 h-5 text-amber-500" />
+                  <Trophy className="w-5 h-5 text-warning" />
                   <CardTitle className="text-lg">Badges</CardTitle>
                 </div>
                 <span className="text-xs text-muted-foreground">
@@ -243,7 +243,7 @@ const AptitudeDashboard = () => {
                     title={`${b.name} — ${b.desc}`}
                     className={`flex flex-col items-center gap-1 p-2 rounded-lg border text-center transition-colors ${
                       b.earned
-                        ? "border-amber-500/40 bg-amber-500/5"
+                        ? "border-warning/40 bg-warning/5"
                         : "border-border opacity-45 grayscale"
                     }`}
                   >
@@ -266,7 +266,7 @@ const AptitudeDashboard = () => {
             </span>
           </Button>
           <Button variant="outline" className="h-auto py-4 justify-start" onClick={() => navigate("/practice/leaderboard")}>
-            <Trophy className="mr-3 w-5 h-5 text-amber-500" />
+            <Trophy className="mr-3 w-5 h-5 text-warning" />
             <span className="text-left">
               <span className="block font-semibold">Leaderboard</span>
               <span className="block text-xs text-muted-foreground">See how you rank against everyone this week</span>
@@ -280,10 +280,10 @@ const AptitudeDashboard = () => {
               No test data yet. Take a practice or test to see your analytics here.
             </p>
             <div className="flex gap-3 justify-center">
-              <Button onClick={() => navigate("/practice/aptitude/practice")} className="bg-emerald-500 hover:bg-emerald-600 text-white">
+              <Button onClick={() => navigate("/practice/aptitude/practice")} className="bg-success hover:bg-success text-white">
                 Start Practice
               </Button>
-              <Button onClick={() => navigate("/practice/aptitude/run")} className="bg-violet-600 hover:bg-violet-700 text-white">
+              <Button onClick={() => navigate("/practice/aptitude/run")} className="bg-primary hover:bg-primary text-white">
                 Take a Test
               </Button>
             </div>

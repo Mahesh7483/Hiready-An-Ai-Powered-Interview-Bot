@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,8 @@ import { toast } from "sonner";
 import { AptitudeTestResult } from "@/lib/aptitudeQuestions";
 import CandidateWebcamMonitor from "@/components/proctoring/CandidateWebcamMonitor";
 import type { ProctorEvent } from "@/lib/proctorLogger";
+import { useStrictProctoring } from "@/hooks/useStrictProctoring";
+import { DEFAULT_CONFIG, type AptitudeConfig } from "@/lib/aptitude";
 import { useAuth } from "@/hooks/useAuth";
 import { API_BASE_URL, getAuthHeaders } from "@/lib/api";
 
@@ -37,17 +39,28 @@ interface AptitudeTestProps {
   adaptive?: boolean;
 }
 
-const AptitudeTest = ({
-  mode = "test",
-  topic = "logical",
-  difficulty,
-  questionCount = 10,
-  timerEnabled,
-  timerMinutes = 20,
-  negativeMarking = false,
-  adaptive = false,
-}: AptitudeTestProps) => {
+const AptitudeTest = (props: AptitudeTestProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
+
+  /**
+   * Settings come from /practice/aptitude via navigation state.
+   *
+   * They used to come from props passed by one of two configurator pages —
+   * and the "Test" card bypassed both, landing here with the defaults below,
+   * so a timed test could never actually be configured. Props still win when
+   * present so nothing that renders this directly breaks.
+   */
+  const stateConfig = (location.state as { config?: AptitudeConfig } | null)?.config;
+  const cfg: AptitudeConfig = { ...DEFAULT_CONFIG, ...stateConfig };
+  const mode = props.mode ?? cfg.mode;
+  const topic = props.topic ?? cfg.topic;
+  const difficulty = props.difficulty ?? cfg.difficulty;
+  const questionCount = props.questionCount ?? cfg.questionCount;
+  const timerEnabled = props.timerEnabled ?? cfg.timerEnabled;
+  const timerMinutes = props.timerMinutes ?? cfg.timerMinutes;
+  const negativeMarking = props.negativeMarking ?? cfg.negativeMarking;
+  const adaptive = props.adaptive ?? cfg.adaptive;
   const { user } = useAuth();
   const isPractice = mode === "practice";
 
@@ -82,14 +95,31 @@ const AptitudeTest = ({
   // Adaptive difficulty: running accuracy of this practice session
   const practiceStatsRef = useRef({ correct: 0, total: 0 });
 
-  // Track proctor warning count (test mode only)
-  useEffect(() => {
-    if (!isPractice) {
-      warningCountRef.current = proctorLogsRef.current.filter(
-        (l) => l.event.includes("tab_switch") || l.event.includes("fullscreen_exit")
-      ).length;
-    }
+  /**
+   * Tab / fullscreen / clipboard proctoring for a timed test.
+   *
+   * CandidateWebcamMonitor (below) covers the camera — faces, extra people —
+   * via useProctoringDetection. It does NOT emit tab_switch or
+   * fullscreen_exit, yet this counter filtered the camera logs for exactly
+   * those two strings, so warningCountRef was permanently 0 and the "warning
+   * system" the landing page advertised counted nothing at all.
+   *
+   * The shared hook actually detects them, and is the same one the coding
+   * workspace uses.
+   */
+  const strictProctoring = useStrictProctoring({
+    sessionId: sessionIdRef.current,
+    mode: isPractice ? "practice" : "interview",
+    active: testStarted && !isPractice,
+    onTerminate: () => {
+      toast.error("Too many violations — submitting your test now.");
+      handleEndTest();
+    },
   });
+
+  useEffect(() => {
+    warningCountRef.current = strictProctoring.violationCount;
+  }, [strictProctoring.violationCount]);
 
   // Per-question dwell time accumulation
   const questionViewStartRef = useRef<number>(Date.now());
