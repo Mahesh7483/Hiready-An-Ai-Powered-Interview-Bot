@@ -197,6 +197,11 @@ function collection(name) {
     findById: jest.fn((v) => chain(
       () => hydrate(rows().find((d) => id(d._id) === id(v)) || null)
     )),
+    // requireAuth now confirms the account still exists on every request.
+    exists: jest.fn(async (filter = {}) => {
+      const hit = rows().find((d) => matches(d, filter));
+      return hit ? { _id: hit._id } : null;
+    }),
     countDocuments: jest.fn((filter = {}) => chain(
       () => rows().filter((d) => matches(d, filter)).length
     )),

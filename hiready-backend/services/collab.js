@@ -11,6 +11,17 @@ function initCollab(httpServer) {
   // Simple per-socket rate limiting
   const buckets = new Map(); // socket.id -> { count, resetAt }
   const activeControllers = new Map(); // room -> 'candidate' | 'interviewer'
+  /*
+   * sessionId -> the user who first opened it, for rooms with no
+   * InterviewSession behind them.
+   *
+   * These used to default to ALLOW: any authenticated caller naming an unknown
+   * sessionId joined as a candidate. The workspace generated ids like
+   * ci-<base36 timestamp>-<6 chars>, so the rooms people actually used fell
+   * into exactly that branch, and a guessed id received the occupant's live
+   * coding:code broadcasts.
+   */
+  const adhocRoomOwners = new Map();
   function checkRate(socket, max = 20) {
     const now = Date.now();
     let b = buckets.get(socket.id);
@@ -23,7 +34,7 @@ function initCollab(httpServer) {
     const token = socket.handshake.auth && socket.handshake.auth.token;
     if (!token) return next(new Error('Authentication required'));
     try {
-      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      const payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       if (!payload || !payload.id) return next(new Error('Invalid token payload'));
       socket.data.userId = String(payload.id);
       socket.data.name = payload.name || payload.email || 'User';
@@ -45,8 +56,25 @@ function initCollab(httpServer) {
       const uid = socket.data.userId;
       let assignedRole = 'candidate';
 
+      /*
+       * Authorization must not be skipped because storage is unavailable.
+       *
+       * Every ownership and admin check below used to sit inside
+       * `if (readyState === 1)`, and the catch swallowed failures and fell
+       * through to the join — so during any Mongo interruption every socket
+       * could join every room it named.
+       *
+       * This is the opposite call from requireAuth, deliberately: there, an
+       * outage must not revoke an authentication already proven by a signed
+       * token. Here there is nothing proven yet, and granting an
+       * authorization that was never checked is not a safe default.
+       */
+      if (mongoose.connection.readyState !== 1) {
+        return socket.emit('coding:error', { error: 'Session cannot be verified right now' });
+      }
+
       try {
-        if (mongoose.connection.readyState === 1) {
+        {
           const User = mongoose.model('User');
           const userDoc = await User.findById(uid).select('role').lean().catch(() => null);
           const isAdmin = Boolean(userDoc && userDoc.role === 'admin');
@@ -76,9 +104,16 @@ function initCollab(httpServer) {
             assignedRole = 'interviewer';
             isAuthorized = true;
           } else {
-            // New or custom practice session: owner is candidate
-            isAuthorized = true;
-            assignedRole = 'candidate';
+            // No InterviewSession behind this id: an ad-hoc room. It belongs to
+            // whoever opened it; everyone else is refused.
+            const owner = adhocRoomOwners.get(sessionId);
+            if (owner && owner !== uid) {
+              isAuthorized = false;
+            } else {
+              adhocRoomOwners.set(sessionId, uid);
+              isAuthorized = true;
+              assignedRole = 'candidate';
+            }
           }
 
           if (!isAuthorized) {
@@ -87,7 +122,9 @@ function initCollab(httpServer) {
           }
         }
       } catch (err) {
-        console.warn('Session verification fallback:', err.message);
+        // Could not verify. Refuse rather than admit.
+        console.warn('Collab join verification failed:', err.message);
+        return socket.emit('coding:error', { error: 'Session cannot be verified right now' });
       }
 
       if (room) socket.leave(room);

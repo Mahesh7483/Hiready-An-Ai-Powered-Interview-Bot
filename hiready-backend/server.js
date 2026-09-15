@@ -4,6 +4,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 require('dotenv').config();
 
 process.on('unhandledRejection', (reason) => {
@@ -15,6 +16,22 @@ process.on('uncaughtException', (err) => {
     process.exit(1);
   }
 });
+/**
+ * Fail fast on a missing or weak signing key.
+ *
+ * middleware/auth.js verifies with process.env.JWT_SECRET, and one helper used
+ * to fall back to the literal 'secret' when it was unset — forgeable by anyone.
+ * The fallback is gone; this makes the condition that motivated it impossible
+ * instead of merely unreachable. The README claimed compose enforced this; the
+ * application did not.
+ */
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error(
+    'JWT_SECRET must be set and at least 32 characters. '
+    + 'Generate one with crypto.randomBytes(48).toString("hex").'
+  );
+}
+
 // 2. Create app
 const app = express();
 app.set('trust proxy', 1);
@@ -36,10 +53,13 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-      // Allow any localhost/127.0.0.1 origin (dev convenience: Vite may serve
-      // via 127.0.0.1 or a LAN IP in some setups). Production origins are
-      // controlled strictly via CORS_ORIGINS — this regex never matches them.
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      // Development convenience only. In production the allowlist is the whole
+      // policy — otherwise anything serving from localhost on an operator's
+      // machine can call a production API with credentials.
+      if (
+        process.env.NODE_ENV !== 'production'
+        && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
         return callback(null, true);
       }
       return callback(new Error('Not allowed by CORS'));
@@ -56,6 +76,24 @@ const apiLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many requests, please try again later' }
+});
+
+/**
+ * The paid endpoints get their own budget, keyed on the USER.
+ *
+ * Groq and Deepgram calls cost money per request, and the global limiter is
+ * per-IP and generous enough (300 / 15 min) that one authenticated account can
+ * exhaust a daily provider quota — which has already happened here once.
+ * Keying on req.user.id means one noisy account cannot spend everyone else's
+ * allowance, and falls back to IP for anything unauthenticated.
+ */
+const aiLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => (req.user && req.user.id) || ipKeyGenerator(req),
+  message: { error: 'AI usage limit reached for this hour. Please try again later.' },
 });
 
 // Stricter limit for auth endpoints (brute-force protection)
@@ -111,7 +149,7 @@ const consentRoutes = require('./routes/consentRoutes');
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/questions', apiLimiter, questionRoutes);
 app.use('/api/interview', apiLimiter, interviewRoutes);
-app.use('/api/ai', apiLimiter, aiRoutes);
+app.use('/api/ai', apiLimiter, aiLimiter, aiRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/resumes', apiLimiter, resumeRoutes);
 app.use('/api/interviews', apiLimiter, interviewSessionRoutes);
@@ -135,9 +173,6 @@ app.use(errorHandler);
 const PORT = process.env.PORT || 5000;
 
 if (require.main === module) {
-  if (!process.env.JWT_SECRET) {
-    console.warn('WARNING: JWT_SECRET is not set. Auth-protected endpoints will reject all tokens.');
-  }
   const http = require('http');
   const server = http.createServer(app);
   // Socket.io collaboration (coding interviews: code + cursor sync)

@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-for-ci";
+process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-for-ci-at-least-32-chars-long";
 process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/hiready-test";
 
 const request = require("supertest");

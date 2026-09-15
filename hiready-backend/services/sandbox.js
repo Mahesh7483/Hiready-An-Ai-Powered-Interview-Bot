@@ -318,11 +318,35 @@ async function executeWithNsjail(config, tempDir, input, timeLimit, memoryLimit,
     '--', '/bin/sh', '-c', full,
   ];
   const result = await runProcess('nsjail', args, input, timeLimit + 5000, tempDir, tempDir);
-  const isNsjailError = result.stderr && /nsjail/i.test(result.stderr);
-  if (result.exitCode === 255 && !result.stdout && isNsjailError) {
-    const fallback = await executeDirect(config, tempDir, input, timeLimit);
-    return { ...fallback, sandbox: 'direct-fallback', nsjailError: result.stderr.slice(0, 1000) };
+
+  /*
+   * NO automatic fallback to unsandboxed execution.
+   *
+   * This used to re-run the program via executeDirect when
+   *   exitCode === 255 && !stdout && /nsjail/i.test(stderr)
+   * — three values the SUBMITTED PROGRAM controls. Any solution could exit
+   * 255, print nothing to stdout and write "nsjail" to stderr, and the server
+   * would obligingly run it again outside the jail: no network namespace, no
+   * rlimits, no uid drop. That is a sandbox escape triggered by ordinary
+   * user input.
+   *
+   * There is no way to distinguish the jail failing from the child pretending
+   * it did, using the child's own output. So when the jail is in use it is the
+   * only thing that runs: a genuine nsjail failure surfaces as an error the
+   * operator can see, not as a silent downgrade of isolation.
+   */
+  if (result.exitCode === 255 && !result.stdout && /nsjail/i.test(result.stderr)) {
+    console.error('[sandbox] nsjail reported a failure:', result.stderr.slice(0, 500));
+    return {
+      stdout: '',
+      stderr: 'The execution environment is unavailable. Please try again shortly.',
+      exitCode: 1,
+      executionTime: result.executionTime || 0,
+      timedOut: false,
+      sandbox: 'unavailable',
+    };
   }
+
   return { ...result, sandbox: 'nsjail' };
 }
 

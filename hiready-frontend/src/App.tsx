@@ -30,11 +30,9 @@ const ResumeHistory = lazy(() => import("./pages/ResumeHistory"));
 const Leaderboard = lazy(() => import("./pages/Leaderboard"));
 const WrongAnswersNotebook = lazy(() => import("./pages/WrongAnswersNotebook"));
 const ResumeReport = lazy(() => import("./pages/ResumeReport"));
-const AptitudePlayCards = lazy(() => import("./pages/AptitudePlayCards"));
+const AptitudeStart = lazy(() => import("./pages/AptitudeStart"));
 const AptitudeTest = lazy(() => import("./pages/AptitudeTest"));
 const AptitudeResult = lazy(() => import("./pages/AptitudeResult"));
-const AptitudePractice = lazy(() => import("./pages/AptitudePractice"));
-const AptitudeTestPage = lazy(() => import("./pages/AptitudeTestPage"));
 const AptitudeDashboard = lazy(() => import("./pages/AptitudeDashboard"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const CodingInterview = lazy(() => import("./pages/CodingInterview"));
@@ -128,9 +126,12 @@ const App = () => (
               {/* ── Practice — the student chooses ── */}
               <Route path="/practice" element={<ProtectedRoute><Practice /></ProtectedRoute>} />
 
-              <Route path="/practice/aptitude" element={<ProtectedRoute><AptitudePlayCards /></ProtectedRoute>} />
-              <Route path="/practice/aptitude/practice" element={<ProtectedRoute><AptitudePractice /></ProtectedRoute>} />
-              <Route path="/practice/aptitude/test" element={<ProtectedRoute><AptitudeTestPage /></ProtectedRoute>} />
+              <Route path="/practice/aptitude" element={<ProtectedRoute><AptitudeStart /></ProtectedRoute>} />
+              {/* One configurator now. /practice and /test were two near-identical
+                  ones, and /test was unreachable — the Test card went straight to
+                  the runner, so a timed test never used its own settings. */}
+              <Route path="/practice/aptitude/practice" element={<Navigate to="/practice/aptitude" replace />} />
+              <Route path="/practice/aptitude/test" element={<Navigate to="/practice/aptitude" replace />} />
               <Route path="/practice/aptitude/run" element={<ProtectedRoute><AptitudeTest /></ProtectedRoute>} />
               <Route path="/practice/aptitude/result" element={<ProtectedRoute><AptitudeResult /></ProtectedRoute>} />
               <Route path="/practice/aptitude/stats" element={<ProtectedRoute><AptitudeDashboard /></ProtectedRoute>} />

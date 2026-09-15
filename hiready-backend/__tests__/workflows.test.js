@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/hiready-test';
 
 const request = require('supertest');
@@ -57,6 +57,15 @@ describe('API Lifecycle Integration Tests & Multi-User Authorization Verificatio
       InterviewSession.deleteMany({ user: { $in: [userAId, userBId] } }),
       ProctorLog.deleteMany({ userId: { $in: [userAId, userBId] } })
     ]);
+    // requireAuth confirms the account still exists, so tokens minted for ids
+    // with no User document are correctly rejected. Create the two users the
+    // fixture acts as.
+    await User.deleteMany({ _id: { $in: [userAId, userBId] } });
+    await User.create([
+      { _id: userAId, name: 'Fixture A', email: `fixture-a-${userAId}@test.invalid` },
+      { _id: userBId, name: 'Fixture B', email: `fixture-b-${userBId}@test.invalid` },
+    ]);
+
 
     sampleQuestions = await Question.create([
       {
@@ -294,9 +303,12 @@ describe('API Lifecycle Integration Tests & Multi-User Authorization Verificatio
         });
 
       expect([200, 201]).toContain(res.status);
-      expect(res.headers).toHaveProperty('x-attempt-id');
-      activeAttemptId = res.headers['x-attempt-id'];
-      expect(res.body.attemptId).toBe(activeAttemptId);
+      // The id travels in the BODY. It was also mirrored into an X-Attempt-Id
+      // header, which a cross-origin browser cannot read without
+      // Access-Control-Expose-Headers — the client always saw null and every
+      // graded action failed. The redundant header is gone.
+      activeAttemptId = res.body.attemptId;
+      expect(activeAttemptId).toBeTruthy();
       expect(res.body.questions).toHaveLength(2);
 
       // CRITICAL: Correct answers MUST NOT be sent to client

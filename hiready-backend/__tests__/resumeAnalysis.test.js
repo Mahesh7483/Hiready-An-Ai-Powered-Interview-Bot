@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 
 const fs = require('fs');
 const path = require('path');
@@ -103,6 +103,40 @@ describe('a truncated response is caught rather than papered over', () => {
     const fenced = ['```json', JSON.stringify(complete()), '```'].join('\n');
     expect(() => parseLLMJson(fenced)).not.toThrow();
     expect(validateResumeAnalysis(parseLLMJson(fenced))).toBe(true);
+  });
+});
+
+describe('JSON-producing calls use constrained decoding', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'aiRoutes.js'), 'utf8');
+
+  test('groqChat sets response_format when asked for JSON', () => {
+    // Free-form, the model intermittently writes a word where a number belongs
+    // — `"wordCount": fifty` — which is unparseable, burns both retries and
+    // surfaces as 502 'Failed to produce a valid analysis'. Measured on one
+    // real resume: 3 of 6 responses invalid without this, 0 of 6 with it.
+    expect(src).toMatch(/response_format = \{ type: 'json_object' \}/);
+    expect(src).toMatch(/if \(options\.json\)/);
+  });
+
+  test('groqJsonTask asks for it', () => {
+    const fn = src.slice(src.indexOf('async function groqJsonTask'), src.indexOf('const RESUME_ANALYSIS_PROMPT'));
+    expect(fn).toMatch(/json: true/);
+  });
+});
+
+describe('a quota error is not reported as an oversized resume', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'aiRoutes.js'), 'utf8');
+  const handler = src.slice(src.indexOf('if (isGroqRateLimit(err))'), src.indexOf('if (isGroqRateLimit(err))') + 900);
+
+  test('413 and 429 produce different statuses', () => {
+    // Telling someone their resume is too large when the account is out of
+    // daily tokens sends them off trimming a file that was never the problem.
+    expect(handler).toMatch(/err\.status === 413/);
+    expect(handler).toMatch(/tooLarge \? 413 : 429/);
+  });
+
+  test('the wait time is surfaced when the provider gives one', () => {
+    expect(handler).toMatch(/try again in/);
   });
 });
 
