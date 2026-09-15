@@ -93,6 +93,73 @@ export class ScannedResumeError extends Error {
  * Extract text from a PDF file using pdfjs-dist.
  * Throws ScannedResumeError when the PDF yields (nearly) no text.
  */
+/**
+ * Rebuilds lines from pdf.js text items.
+ *
+ * pdf.js returns positioned fragments, not lines. Joining them all with a space
+ * — which this did — collapses an entire resume into ONE line: 3,775 characters
+ * with no break anywhere. Every section heading then sits mid-sentence,
+ * indistinguishable from body text, and the model has to guess where sections
+ * begin.
+ *
+ * Measured on a real resume that plainly has a Projects heading, 8 runs each:
+ *
+ *   flattened   Projects found 4/8, judged MISSING 2/8, invalid JSON 2/8
+ *   line-aware  Projects found 7/8, judged MISSING 0/8, invalid JSON 1/8
+ *
+ * The model's own feedback on the failures was "Project section missing
+ * heading" and "Project section not labeled" — it was reporting the damage this
+ * function was doing. It is also why "Academic Projects & Technical Experience"
+ * under Experience got mistaken for the Projects section itself.
+ *
+ * Lines are detected by a change in baseline (transform[5]) and by the explicit
+ * hasEOL flag, so wrapped paragraphs and headings both survive.
+ */
+type PositionedText = { str: string; transform?: number[]; hasEOL?: boolean };
+
+/** content.items mixes text with marked-content markers; only text has `str`. */
+function isPositionedText(item: unknown): item is PositionedText {
+  return (
+    typeof item === "object" &&
+    item !== null &&
+    "str" in item &&
+    typeof (item as { str: unknown }).str === "string"
+  );
+}
+
+export function itemsToLines(items: readonly unknown[]): string {
+  const lines: string[] = [];
+  let current: string[] = [];
+  let lastY: number | null = null;
+
+  const flush = () => {
+    const line = current.join(" ").replace(/\s+/g, " ").trim();
+    if (line) lines.push(line);
+    current = [];
+  };
+
+  for (const item of items) {
+    if (!isPositionedText(item)) continue;
+    const y = item.transform ? item.transform[5] : null;
+
+    // A baseline shift means a new line. The tolerance absorbs sub-pixel
+    // jitter and superscripts without merging genuinely separate lines.
+    if (lastY !== null && y !== null && Math.abs(y - lastY) > 2) flush();
+
+    current.push(item.str);
+
+    if (item.hasEOL) {
+      flush();
+      lastY = null;
+      continue;
+    }
+    if (y !== null) lastY = y;
+  }
+  flush();
+
+  return lines.join("\n");
+}
+
 async function extractTextFromPDF(file: File): Promise<string> {
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -101,10 +168,7 @@ async function extractTextFromPDF(file: File): Promise<string> {
   for (let i = 1; i <= pdf.numPages; i++) {
     const page = await pdf.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item) => ("str" in item ? item.str : ""))
-      .join(" ");
-    textParts.push(pageText);
+    textParts.push(itemsToLines(content.items));
   }
 
   const fullText = textParts.join("\n\n");
