@@ -10,7 +10,10 @@
     "test:watch": "jest --watch",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "node scripts/check-syntax.js"
+    "typecheck": "node scripts/check-syntax.js",
+    "smoke": "node scripts/smokeAssessment.js && node scripts/smokeHireFlow.js",
+    "smoke:assessment": "node scripts/smokeAssessment.js",
+    "smoke:hire": "node scripts/smokeHireFlow.js"
   },
   "keywords": [],
   "author": "",

@@ -327,6 +327,15 @@ async function advanceOrFinish(attempt, template, sectionResult) {
   if (nextIdx >= template.sections.length) {
     attempt.status = 'completed';
     attempt.completedAt = new Date();
+    // Stamp the verdict HERE, at the one place a normal completion happens.
+    // It was previously stamped only on the abnormal exits — expiry, auto
+    // submission, violation — so an attempt finished honestly ended with
+    // integrityVerdict null. services/hire/readers.js maps null to 'unknown',
+    // which the scorecard renders as "Not evaluated", so the only integrity
+    // signal a recruiter ever gets would have been absent on exactly the
+    // attempts that earned a clean one. Invisible until now only because no
+    // attempt could reach this line at all.
+    stampVerdict(attempt, template && template.violationThreshold);
     return;
   }
   const brk = findBreakAfter(template, attempt.currentSectionIndex);

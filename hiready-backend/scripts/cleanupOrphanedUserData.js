@@ -21,6 +21,8 @@
  * types would misclassify live rows as orphaned.
  */
 require('dotenv').config({ quiet: true });
+const fs = require('fs');
+const path = require('path');
 const mongoose = require('mongoose');
 
 const COMMIT = process.argv.includes('--commit');
@@ -82,8 +84,34 @@ const TARGETS = [
 
   if (!COMMIT) {
     console.log(`\n${grandTotal} row(s) would be deleted.`);
-    console.log('This is irreversible. Re-run with --commit to proceed.');
+    console.log('Re-run with --commit to proceed. The rows are dumped to');
+    console.log('backups/ before anything is removed.');
     await mongoose.disconnect();
+    return;
+  }
+
+  // Dump everything first. "Irreversible" is a poor property for a tool that
+  // deletes production rows on the strength of one flag — this makes a mistake
+  // recoverable with mongoimport, at the cost of one file.
+  const backupDir = path.join(__dirname, '..', 'backups');
+  fs.mkdirSync(backupDir, { recursive: true });
+  const backupPath = path.join(
+    backupDir,
+    `orphans-${new Date().toISOString().replace(/[:.]/g, '-')}.json`
+  );
+
+  const dump = {};
+  for (const p of plan) {
+    dump[p.collection] = await p.coll.find({ [p.field]: { $in: p.orphanIds } }).toArray();
+  }
+  fs.writeFileSync(backupPath, JSON.stringify(dump, null, 2));
+  const dumped = Object.values(dump).reduce((n, rows) => n + rows.length, 0);
+  console.log(`
+backed up ${dumped} row(s) to ${path.relative(process.cwd(), backupPath)}`);
+  if (dumped !== grandTotal) {
+    console.error(`refusing to delete: backed up ${dumped} but planned ${grandTotal}`);
+    await mongoose.disconnect();
+    process.exitCode = 1;
     return;
   }
 

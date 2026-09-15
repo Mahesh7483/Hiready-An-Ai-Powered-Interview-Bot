@@ -50,6 +50,46 @@ describe('integrityVerdict', () => {
   });
 });
 
+describe('every exit from an attempt stamps a verdict', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const src = fs.readFileSync(
+    path.join(__dirname, '..', 'routes', 'assessmentRoutes.js'), 'utf8'
+  );
+
+  test('the normal completion path stamps one', () => {
+    // It used to stamp only on the ABNORMAL exits — expiry, auto submission,
+    // violation — so an attempt finished honestly ended with integrityVerdict
+    // null, which readers.js maps to 'unknown' and the scorecard renders as
+    // "Not evaluated". The one integrity signal a recruiter gets was therefore
+    // absent on exactly the attempts that had earned a clean verdict.
+    // findBreakAfter is declared ABOVE advanceOrFinish, so slice forward to
+    // the next route instead — a reversed slice silently yields '', which
+    // would make toContain fail for the wrong reason or pass vacuously.
+    const start = src.indexOf('async function advanceOrFinish');
+    const fn = src.slice(start, src.indexOf('router.post(', start));
+    expect(start).toBeGreaterThan(-1);
+    expect(fn).toContain("attempt.status = 'completed'");
+    expect(fn).toMatch(/stampVerdict\(/);
+  });
+
+  test('no assignment to completed or auto_submitted lacks a nearby stamp', () => {
+    const unstamped = [];
+    const re = /attempt\.status = '(completed|auto_submitted)'/g;
+    let m;
+    while ((m = re.exec(src)) !== null) {
+      // The stamp belongs with the transition, so look in the lines around it
+      // rather than anywhere in the file.
+      // Generous, because the stamp sits under an explanatory comment.
+      const window = src.slice(m.index, m.index + 1200);
+      if (!/stampVerdict\(/.test(window)) {
+        unstamped.push(`${m[1]} at offset ${m.index}`);
+      }
+    }
+    expect(unstamped).toEqual([]);
+  });
+});
+
 describe('the verdict is the only integrity signal in the hiring domain', () => {
   test('services/integrity.js lives outside services/hire', () => {
     // Evidence production may know about violations; hiring consumption may
