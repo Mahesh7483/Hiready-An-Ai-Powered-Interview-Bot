@@ -57,6 +57,22 @@ const candidateCompanyConsentSchema = new mongoose.Schema(
 
     /** Who acted, for the disclosure audit. Null when the candidate acted. */
     grantedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
+    /**
+     * A company has asked to see this DISCOVERABLE candidate's full profile.
+     *
+     * These two MUST stay declared. routes/hire/discover.js writes them via
+     * doc.set(), and under mongoose's default strict:true an undeclared path is
+     * dropped in silence — no error, no warning, and save() issues no update at
+     * all because the document never becomes dirty. That made the whole
+     * discover -> interest -> reveal funnel dead while every response still
+     * said {ok: true}.
+     *
+     * Cleared on reveal and on revoke, so a stale prompt cannot outlive the
+     * request it refers to.
+     */
+    interestAt: { type: Date, default: null },
+    interestBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   },
   { timestamps: true }
 );

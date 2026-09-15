@@ -5,7 +5,6 @@ const Job = require('../../models/Job');
 const Application = require('../../models/Application');
 const AssessmentTemplate = require('../../models/AssessmentTemplate');
 const { requireCompanyRole } = require('../../middleware/company');
-const { notFound } = require('../../services/hire/access');
 
 /**
  * Jobs and the pipeline.
@@ -25,7 +24,7 @@ router.get('/', async (req, res) => {
       .lean();
 
     const counts = await Application.aggregate([
-      { $match: { companyId: new mongoose.Types.ObjectId(req.company.companyId) } },
+      { $match: { companyId: req.company.companyOid } },
       { $group: { _id: { job: '$jobId', stage: '$stage' }, n: { $sum: 1 } } },
     ]);
 
@@ -76,6 +75,11 @@ router.post('/', requireCompanyRole('owner', 'recruiter'), async (req, res) => {
       description: String(description).slice(0, 4000),
       location: String(location).slice(0, 120),
       templateId,
+      // A job nobody can open is not a job. `status` had no writer at all, so
+      // every row stayed 'draft' forever and the {companyId,status} index was
+      // unreachable. Created open by default — a recruiter making a job means
+      // to hire — and closable below.
+      status: 'open',
       createdBy: req.user.id,
     });
     res.status(201).json(job);
@@ -123,6 +127,27 @@ router.get('/:id', async (req, res) => {
   }
 });
 
+// PATCH /api/hire/jobs/:id — open or close a job
+router.patch('/:id', requireCompanyRole('owner', 'recruiter'), async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) return refuse(res);
+    const { status } = req.body;
+    if (!['draft', 'open', 'closed'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const job = await Job.findOneAndUpdate(
+      { _id: req.params.id, companyId: req.company.companyId },
+      { $set: { status } },
+      { new: true }
+    ).lean();
+    if (!job) return refuse(res);
+    res.json(job);
+  } catch (err) {
+    console.error('hire job status error:', err.message);
+    res.status(500).json({ error: 'Failed to update job' });
+  }
+});
+
 // PATCH /api/hire/jobs/:id/applications/:appId — move a candidate along
 router.patch(
   '/:id/applications/:appId',
@@ -134,6 +159,10 @@ router.patch(
         // `withdrawn` is the candidate's lever and is rejected here on purpose.
         return res.status(400).json({ error: 'Invalid stage' });
       }
+      // Both ids, not just appId: an unvalidated jobId reaches the query as a
+      // cast target and throws, surfacing as a 500 — a third distinct response
+      // shape on a path the design says must always refuse identically.
+      if (!mongoose.Types.ObjectId.isValid(req.params.id)) return refuse(res);
       if (!mongoose.Types.ObjectId.isValid(req.params.appId)) return refuse(res);
 
       const app = await Application.findOne({

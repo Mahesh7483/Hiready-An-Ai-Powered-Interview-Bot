@@ -1,4 +1,5 @@
 const AssessmentAttempt = require('../../models/AssessmentAttempt');
+const AssessmentTemplate = require('../../models/AssessmentTemplate');
 const InterviewSession = require('../../models/InterviewSession');
 const ResumeAnalysis = require('../../models/ResumeAnalysis');
 const User = require('../../models/User');
@@ -21,6 +22,25 @@ const { requireScope } = require('./access');
  * and fails the build if any of those become reachable.
  */
 
+/**
+ * Templates this company is allowed to see results from: its own private
+ * instruments, plus platform-wide ones.
+ *
+ * Without this filter a scorecard returns EVERY attempt the candidate ever
+ * made. A candidate who sat Acme's private instrument and later accepts Globex
+ * would show Globex the Acme attempt — its templateId, section composition and
+ * score — so Globex learns that Acme assessed her, roughly what they tested and
+ * how she did. Self-practice attempts would surface as hiring evidence too.
+ */
+async function visibleTemplateIds(companyId) {
+  const templates = await AssessmentTemplate.find({
+    $or: [{ companyId }, { companyId: null }],
+  })
+    .select('_id')
+    .lean();
+  return templates.map((t) => t._id);
+}
+
 /** Assessment evidence: section scores and the derived integrity verdict. */
 async function getScorecard(access) {
   requireScope(access, 'assessment');
@@ -28,6 +48,7 @@ async function getScorecard(access) {
   const attempts = await AssessmentAttempt.find({
     userId: access.candidateId,
     status: { $in: ['completed', 'auto_submitted'] },
+    templateId: { $in: await visibleTemplateIds(access.companyId) },
   })
     // Note what is absent: sectionState (the answer key) and violations (the
     // event list). Only the graded outcome and the verdict cross this line.
@@ -59,7 +80,13 @@ async function getScorecard(access) {
 async function getInterviewSummary(access) {
   requireScope(access, 'interview');
 
-  const sessions = await InterviewSession.find({ user: access.candidateId })
+  // mode filter is load-bearing: this module's header asserts that practice
+  // history is not hiring evidence, and a candidate's throwaway practice runs
+  // were being scored and shown to recruiters alongside real ones.
+  const sessions = await InterviewSession.find({
+    user: access.candidateId,
+    mode: { $ne: 'practice' },
+  })
     .select('role experienceLevel durationSeconds analysisJson createdAt')
     .sort({ createdAt: -1 })
     .limit(10)
@@ -74,7 +101,13 @@ async function getInterviewSummary(access) {
       durationSeconds: s.durationSeconds,
       overallScore: s.analysisJson.overallScore ?? null,
       // Dimension scores only. The transcript is a separate, later consent.
-      dimensions: s.analysisJson.dimensions || s.analysisJson.scores || null,
+      // The analyser emits performanceBreakdown / skillsAssessment. Reading
+      // `dimensions` or `scores` — neither of which it has ever produced —
+      // meant every scorecard rendered an empty breakdown.
+      dimensions:
+        s.analysisJson.performanceBreakdown
+        || s.analysisJson.skillsAssessment
+        || null,
       at: s.createdAt,
     }));
 }

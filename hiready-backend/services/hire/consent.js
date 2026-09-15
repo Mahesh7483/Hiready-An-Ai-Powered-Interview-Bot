@@ -1,5 +1,6 @@
 const CandidateCompanyConsent = require('../../models/CandidateCompanyConsent');
 const DisclosureAudit = require('../../models/DisclosureAudit');
+const Application = require('../../models/Application');
 
 /**
  * Consent transitions, and the audit that accompanies every one of them.
@@ -52,8 +53,21 @@ async function grantViaInvite({ candidateId, companyId, actorId = null }) {
   return consent;
 }
 
-/** The candidate opts into pseudonymous discovery by one company. */
+/**
+ * The candidate opts into pseudonymous discovery by one company.
+ *
+ * Deliberately does NOT downgrade an existing grant. An unconditional
+ * $set would drop a live REVEALED/IN_PROCESS consent back to DISCOVERABLE,
+ * silently cutting a recruiter off from a candidate mid-pipeline and
+ * rewriting `source` so the row no longer records that it began as an invite.
+ * Opting into discovery is strictly an increase in visibility.
+ */
 async function openToDiscovery({ candidateId, companyId }) {
+  const existing = await CandidateCompanyConsent.findOne({ candidateId, companyId }).lean();
+  if (existing && ['REVEALED', 'IN_PROCESS'].includes(existing.state) && !existing.revokedAt) {
+    return existing; // already more visible than DISCOVERABLE — nothing to do
+  }
+
   const consent = await CandidateCompanyConsent.findOneAndUpdate(
     { candidateId, companyId },
     {
@@ -77,6 +91,9 @@ async function reveal({ candidateId, companyId }) {
   const from = consent.state;
   consent.state = 'REVEALED';
   consent.revokedAt = null;
+  // The prompt has been answered; it must not linger on the privacy screen.
+  consent.interestAt = null;
+  consent.interestBy = null;
   await consent.save();
   await audit({
     candidateId, companyId, consentId: consent._id,
@@ -99,7 +116,22 @@ async function revoke({ candidateId, companyId, actorId = null }) {
   const from = consent.state;
   consent.state = 'REVOKED';
   consent.revokedAt = new Date();
+  consent.interestAt = null;
+  consent.interestBy = null;
   await consent.save();
+
+  // Without this the candidate stays on the company's pipeline board with
+  // their id, stage and attempt flag visible, and a recruiter can still move
+  // them to hired or rejected — only the identity lookup was blocked. The
+  // board already renders `withdrawn` as a non-actionable badge.
+  await Application.updateMany(
+    { candidateId, companyId, stage: { $nin: ['withdrawn', 'rejected', 'hired'] } },
+    {
+      $set: { stage: 'withdrawn' },
+      $push: { history: { from: 'revoked-consent', to: 'withdrawn', actorId, at: new Date() } },
+    }
+  );
+
   await audit({
     candidateId, companyId, consentId: consent._id,
     action: 'revoked', scopes: [], actorId,
@@ -124,6 +156,28 @@ async function recordDisclosure(access, scopes, actorId, meta = {}) {
   });
 }
 
+
+/**
+ * A candidate now has a live application with this company.
+ *
+ * IN_PROCESS was documented as a state and branched on in four modules, but
+ * nothing ever wrote it — the transition existed only in a comment. Called when
+ * an Application is created so the candidate's privacy screen can say
+ * "interviewing you" rather than the flat "can see you".
+ */
+async function attachApplication({ candidateId, companyId }) {
+  const consent = await CandidateCompanyConsent.findOne({ candidateId, companyId });
+  if (!consent || consent.state !== 'REVEALED' || consent.revokedAt) return consent;
+  consent.state = 'IN_PROCESS';
+  await consent.save();
+  await audit({
+    candidateId, companyId, consentId: consent._id,
+    action: 'state_changed', scopes: [], actorId: null,
+    meta: { from: 'REVEALED', to: 'IN_PROCESS' },
+  });
+  return consent;
+}
+
 /** Every company that can currently see this candidate — powers the privacy screen. */
 async function companiesWithAccess(candidateId) {
   return CandidateCompanyConsent.find({
@@ -137,6 +191,7 @@ async function companiesWithAccess(candidateId) {
 
 module.exports = {
   grantViaInvite,
+  attachApplication,
   openToDiscovery,
   reveal,
   revoke,

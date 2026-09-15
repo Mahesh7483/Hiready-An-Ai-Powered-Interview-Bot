@@ -14,12 +14,32 @@ const { recordDisclosure } = require('../../services/hire/consent');
  * that is the signal to add a reader instead.
  */
 
+
+/**
+ * The scopes that actually yielded something, so the audit records what was
+ * really disclosed rather than what was merely permitted.
+ */
+function disclosedScopes(card, access) {
+  const used = [];
+  if (card.identity) used.push('identity');
+  if (card.assessments && card.assessments.length) used.push('assessment');
+  if (card.interviews && card.interviews.length) used.push('interview');
+  if (card.resume) used.push('resume');
+  // Nothing came back, but the read still happened under this authorization.
+  return used.length ? used : access.scopes();
+}
+
 // GET /api/hire/candidates/:id
 router.get('/:id', async (req, res, next) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      // expose is required: without it middleware/errorHandler.js substitutes
+      // "Internal server error", producing a second refusal shape that a caller
+      // can tell apart from candidateAccess()'s "Not found" — and dumping a
+      // stack trace for every fat-fingered URL.
       const e = new Error('Not found');
       e.status = 404;
+      e.expose = true;
       throw e;
     }
 
@@ -30,11 +50,14 @@ router.get('/:id', async (req, res, next) => {
 
     // Record the disclosure at the moment it happens, not merely the
     // authorization that permitted it.
-    if (scorecard.identity) {
-      recordDisclosure(access, access.scopes(), req.user.id, {
-        route: 'GET /api/hire/candidates/:id',
-      });
-    }
+    //
+    // NOT gated on identity. A viewer reads assessment, interview and resume
+    // evidence with identity null — that evidence still left the platform and
+    // must appear in the candidate's "who has seen my results?". Gating on a
+    // name also lost the audit whenever the User row had been deleted.
+    recordDisclosure(access, disclosedScopes(scorecard, access), req.user.id, {
+      route: 'GET /api/hire/candidates/:id',
+    });
 
     res.json(scorecard);
   } catch (err) {
@@ -62,7 +85,14 @@ router.post('/compare', async (req, res, next) => {
       if (!mongoose.Types.ObjectId.isValid(id)) continue;
       try {
         const access = await candidateAccess(req, id);
-        cards.push(await getFullScorecard(access));
+        const card = await getFullScorecard(access);
+        cards.push(card);
+        // One row per candidate actually returned. This path previously
+        // disclosed up to five full scorecards, identities included, and wrote
+        // nothing at all — so the candidate's own record showed it never happened.
+        recordDisclosure(access, disclosedScopes(card, access), req.user.id, {
+          route: 'POST /api/hire/candidates/compare',
+        });
       } catch {
         // One inaccessible candidate must not reveal itself by changing the
         // response shape — it is simply absent.

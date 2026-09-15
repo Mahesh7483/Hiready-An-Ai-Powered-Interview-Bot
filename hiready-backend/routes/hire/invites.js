@@ -68,15 +68,48 @@ router.post('/', requireCompanyRole('owner', 'recruiter'), async (req, res) => {
   }
 });
 
-// GET /api/hire/invites — this company's invites. Tokens never come back.
-router.get('/', async (req, res) => {
+/**
+ * Masks an address to a recognisable hint: ada@example.com -> a…a@example.com
+ *
+ * Used for invites that were NOT accepted. Declining is not consent, and a
+ * refusal must not become a disclosure — but a recruiter still needs enough to
+ * recognise their own outgoing invite in a list.
+ */
+function maskEmail(email) {
+  const [local, domain] = String(email).split('@');
+  if (!domain) return '…';
+  const head = local.slice(0, 1);
+  const tail = local.length > 2 ? local.slice(-1) : '';
+  return `${head}…${tail}@${domain}`;
+}
+
+/**
+ * GET /api/hire/invites — this company's invites. Tokens never come back.
+ *
+ * Role-gated, and the raw address is returned only where the candidate has
+ * actually consented. Without both, this route is a hole straight through the
+ * capability system: an invite in `sent`, `declined`, `expired` or `revoked`
+ * has NO CandidateCompanyConsent row at all (grantViaInvite only runs on
+ * accept), so a viewer — who scopesFor() deliberately denies the `identity`
+ * scope — could otherwise read every address the company ever touched, plus
+ * who refused it.
+ */
+router.get('/', requireCompanyRole('owner', 'recruiter'), async (req, res) => {
   try {
     const invites = await CompanyInvite.find({ companyId: req.company.companyId })
       .select('email status jobId createdAt acceptedAt expiresAt')
       .sort({ createdAt: -1 })
       .limit(200)
       .lean();
-    res.json({ invites });
+
+    res.json({
+      invites: invites.map((i) => ({
+        ...i,
+        // Accepted means consent exists. Anything else stays masked.
+        email: i.status === 'accepted' ? i.email : maskEmail(i.email),
+        emailMasked: i.status !== 'accepted',
+      })),
+    });
   } catch (err) {
     console.error('hire invite list error:', err.message);
     res.status(500).json({ error: 'Failed to load invites' });

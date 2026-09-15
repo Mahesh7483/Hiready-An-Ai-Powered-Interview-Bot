@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const router = express.Router();
 const CandidateCompanyConsent = require('../../models/CandidateCompanyConsent');
 const AssessmentAttempt = require('../../models/AssessmentAttempt');
+const AssessmentTemplate = require('../../models/AssessmentTemplate');
 const { requireCompanyRole } = require('../../middleware/company');
 
 /**
@@ -41,6 +42,9 @@ router.get('/', async (req, res) => {
       revokedAt: null,
     })
       .select('candidateId')
+      // Sorted so the cap is deterministic. Without it, which slice of a larger
+      // consenting pool gets considered is whatever order the collection returns.
+      .sort({ grantedAt: -1 })
       .limit(500)
       .lean();
 
@@ -48,12 +52,24 @@ router.get('/', async (req, res) => {
 
     const ids = consents.map((c) => c.candidateId);
 
+    // Same tenant scoping as services/hire/readers.js getScorecard(): rank only
+    // on attempts this company is entitled to see. Aggregating over every
+    // attempt the candidate ever made would rank them partly on another
+    // company's private instrument, and partly on their own self-practice.
+    const templates = await AssessmentTemplate.find({
+      $or: [{ companyId: req.company.companyId }, { companyId: null }],
+    })
+      .select('_id')
+      .lean();
+    const templateIds = templates.map((t) => t._id);
+
     // Verified assessment performance only. Practice history is NEVER in
     // policy/dataAccess.js and is not consulted, here or anywhere under /hire.
     const rows = await AssessmentAttempt.aggregate([
       {
         $match: {
           userId: { $in: ids },
+          templateId: { $in: templateIds },
           status: { $in: ['completed', 'auto_submitted'] },
         },
       },
@@ -80,13 +96,19 @@ router.get('/', async (req, res) => {
           },
         },
       },
-      { $match: { percent: { $gte: minScore } } },
+      // `null >= 0` is false in BSON comparison order, so an unfiltered search
+      // was silently dropping candidates whose sections were all ungraded —
+      // despite this route promising that only non-opted-in candidates are absent.
+      { $match: minScore > 0 ? { percent: { $gte: minScore } } : {} },
       { $sort: { percent: -1, lastAt: -1 } },
       { $limit: limit },
     ]);
 
     res.json({
       total: rows.length,
+      // rows is already capped by $limit, so this is the returned count, not the
+      // size of the matching pool. Named accordingly rather than mislabelled.
+      capped: rows.length === limit,
       candidates: rows.map((r) => ({
         // The opaque handle. It is the candidate id, which is fine precisely
         // because it resolves to nothing without consent — candidateAccess

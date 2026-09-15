@@ -5,9 +5,10 @@ const { requireAuth } = require('../middleware/auth');
 const CompanyInvite = require('../models/CompanyInvite');
 const CandidateCompanyConsent = require('../models/CandidateCompanyConsent');
 const Company = require('../models/Company');
+const User = require('../models/User');
 const Application = require('../models/Application');
 const {
-  grantViaInvite, openToDiscovery, reveal, revoke, companiesWithAccess,
+  grantViaInvite, openToDiscovery, reveal, revoke, companiesWithAccess, attachApplication,
 } = require('../services/hire/consent');
 
 /**
@@ -50,6 +51,13 @@ router.get('/invite/:token', async (req, res) => {
     if (!invite) return res.status(404).json({ error: 'Invite not found' });
     if (invite.expiresAt < new Date()) return res.status(410).json({ error: 'Invite expired' });
 
+    // Same binding as accept: previewing someone else's invite must not confirm
+    // which address a company approached.
+    const me = await User.findById(req.user.id).select('email').lean();
+    if (!me || String(me.email).toLowerCase() !== String(invite.email).toLowerCase()) {
+      return res.status(404).json({ error: 'Invite not found' });
+    }
+
     const company = await Company.findById(invite.companyId).select('name').lean();
     res.json({
       company: company ? company.name : 'Unknown company',
@@ -77,6 +85,17 @@ router.post('/invite/:token/accept', async (req, res) => {
       invite.status = 'expired';
       await invite.save();
       return res.status(410).json({ error: 'Invite expired' });
+    }
+
+    // The token alone must not be enough. The recruiter holds the plaintext
+    // from the API response before it is ever emailed, so without this check a
+    // forwarded link, a shared mailbox, or the recruiter's own student account
+    // could redeem an invite addressed to someone else — creating consent for
+    // the wrong person, opening an Application for them, and burning the
+    // invite so the real invitee is permanently locked out.
+    const me = await User.findById(req.user.id).select('email').lean();
+    if (!me || String(me.email).toLowerCase() !== String(invite.email).toLowerCase()) {
+      return res.status(404).json({ error: 'Invite not found' });
     }
 
     // Grants exactly ONE company access. The candidate does not become
@@ -107,9 +126,12 @@ router.post('/invite/:token/accept', async (req, res) => {
         },
         { upsert: true, new: true, setDefaultsOnInsert: true }
       );
+      // A live application is a stronger relationship than "can see you".
+      await attachApplication({ candidateId: req.user.id, companyId: invite.companyId });
     }
 
-    res.json({ ok: true, state: consent.state });
+    const current = await CandidateCompanyConsent.findById(consent._id).select('state').lean();
+    res.json({ ok: true, state: current ? current.state : consent.state });
   } catch (err) {
     console.error('invite accept error:', err.message);
     res.status(500).json({ error: 'Failed to accept invite' });
@@ -119,8 +141,16 @@ router.post('/invite/:token/accept', async (req, res) => {
 // POST /api/consent/invite/:token/decline
 router.post('/invite/:token/decline', async (req, res) => {
   try {
+    const me = await User.findById(req.user.id).select('email').lean();
+    if (!me) return res.status(404).json({ error: 'Invite not found' });
+    // Bound to the invitee: a third party must not be able to decline on
+    // someone else's behalf and burn their invite.
     const invite = await CompanyInvite.findOneAndUpdate(
-      { tokenHash: CompanyInvite.hashToken(req.params.token), status: 'sent' },
+      {
+        tokenHash: CompanyInvite.hashToken(req.params.token),
+        status: 'sent',
+        email: String(me.email).toLowerCase(),
+      },
       { $set: { status: 'declined' } },
       { new: true }
     ).lean();

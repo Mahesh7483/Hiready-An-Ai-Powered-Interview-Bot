@@ -44,6 +44,31 @@ docker compose up --build        # frontend :3000, API :5000, Mongo :27017
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
+## Employers (`/hire`)
+
+A separate surface for companies hiring through the platform, governed by one
+rule: **no recruiter obtains candidate identity or evidence without an active,
+company-specific consent.**
+
+| Concept | Meaning |
+|---|---|
+| `Company` / `CompanyMembership` | Tenancy. Recruiter-ness is a relationship to a company, not a `User.role` |
+| `CandidateCompanyConsent` | Permission for ONE company to see ONE candidate. "Private" is the absence of a row |
+| `candidateAccess(req, id)` | The only door. Returns a frozen, request-scoped capability; every reader takes it, none accept a bare id |
+| `integrityVerdict` | How a recruiter learns a result is untrustworthy without any path to proctoring records |
+
+Recruiters never receive proctoring events or webcam frames, raw interview
+audio, practice history, or another company's pipeline. `ProctorSnapshot` is a
+separate collection with a TTL, and `__tests__/hireBoundary.test.js` fails the
+build if anything under `routes/hire/**` can reach it, directly or transitively.
+
+Candidates manage this at `/privacy`: every company that can see them, with
+one-click revoke. Revoking stops future access — assessments a company already
+ran stay with that company, and the UI says so.
+
+Admins approve and suspend companies at `/admin/companies`; `/admin/disclosure`
+records who was disclosed, to whom, what, when, and under which consent.
+
 ## Environment variables
 
 | Variable | Where | Required | Purpose |

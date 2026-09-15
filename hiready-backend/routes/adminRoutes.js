@@ -6,6 +6,9 @@ const Question = require('../models/Question');
 const TestResult = require('../models/TestResult');
 const ProctorLog = require('../models/ProctorLog');
 const ProctorSnapshot = require('../models/ProctorSnapshot');
+const CandidateCompanyConsent = require('../models/CandidateCompanyConsent');
+const Application = require('../models/Application');
+const CompanyMembership = require('../models/CompanyMembership');
 const { requireAdmin } = require('../middleware/auth');
 const AuditLog = require('../models/AuditLog');
 const Announcement = require('../models/Announcement');
@@ -376,18 +379,46 @@ router.delete('/users/:id', async (req, res) => {
       return res.status(400).json({ error: 'Demote this admin before deleting' });
     }
 
-    await Promise.all([
-      User.deleteOne({ _id: req.params.id }),
-      TestResult.deleteMany({ userId: req.params.id }),
-      ProctorLog.deleteMany({ userId: req.params.id }),
-      InterviewSession.deleteMany({ user: req.params.id }),
-      ResumeAnalysis.deleteMany({ user: req.params.id }),
-      AssessmentAttempt.deleteMany({ userId: req.params.id }),
-      CodingSubmission.deleteMany({ userId: req.params.id }),
-      SavedQuestion.deleteMany({ userId: req.params.id }),
-    ]);
+    const id = req.params.id;
 
-    res.json({ message: 'User and associated data deleted' });
+    // Every collection holding a reference to this person.
+    //
+    // DisclosureAudit is deliberately ABSENT: it records who saw this
+    // candidate's data and under what consent, and it must outlive both the
+    // consent and the account or it cannot answer that question later. Do not
+    // add it here.
+    const cascade = {
+      user: () => User.deleteOne({ _id: id }),
+      testResults: () => TestResult.deleteMany({ userId: id }),
+      proctorLogs: () => ProctorLog.deleteMany({ userId: id }),
+      // Biometric webcam frames. Missing from this cascade until now, so images
+      // outlived the deleted account for the remainder of their 90-day TTL —
+      // in a collection whose own header calls it a DPDP/GDPR boundary.
+      proctorSnapshots: () => ProctorSnapshot.deleteMany({ userId: id }),
+      interviewSessions: () => InterviewSession.deleteMany({ user: id }),
+      resumeAnalyses: () => ResumeAnalysis.deleteMany({ user: id }),
+      assessmentAttempts: () => AssessmentAttempt.deleteMany({ userId: id }),
+      codingSubmissions: () => CodingSubmission.deleteMany({ userId: id }),
+      savedQuestions: () => SavedQuestion.deleteMany({ userId: id }),
+      // Hiring-side references: a deleted candidate must not keep live consents,
+      // applications, memberships or pending invites.
+      consents: () => CandidateCompanyConsent.deleteMany({ candidateId: id }),
+      applications: () => Application.deleteMany({ candidateId: id }),
+      memberships: () => CompanyMembership.deleteMany({ userId: id }),
+    };
+
+    const entries = Object.entries(cascade);
+    const settled = await Promise.all(entries.map(([, run]) => run()));
+    const deleted = Object.fromEntries(
+      entries.map(([name], i) => [name, settled[i].deletedCount ?? 0])
+    );
+
+    // Reported rather than assumed. This route previously returned success
+    // unconditionally, which is how a cascade that matched zero rows — because
+    // the ids were string-typed and the filter cast them — looked like it had
+    // worked for months.
+    logAdminAction(req, 'user.delete', 'User:' + id, deleted);
+    res.json({ message: 'User and associated data deleted', deleted });
   } catch (err) {
     console.error('Admin delete user error:', err.message);
     res.status(500).json({ error: 'Failed to delete user' });
@@ -776,11 +807,8 @@ router.get('/interview-sessions', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const Company = require('../models/Company');
-const CompanyMembership = require('../models/CompanyMembership');
-const CandidateCompanyConsent = require('../models/CandidateCompanyConsent');
 const DisclosureAudit = require('../models/DisclosureAudit');
 const Job = require('../models/Job');
-const Application = require('../models/Application');
 
 // GET /api/admin/companies
 router.get('/companies', async (req, res) => {

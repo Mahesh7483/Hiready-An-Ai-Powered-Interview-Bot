@@ -45,9 +45,12 @@ const companyInviteSchema = new mongoose.Schema(
 );
 
 // One live invite per company per email.
+// unique is load-bearing: without it two recruiters inviting the same address
+// concurrently both miss the upsert and both insert, leaving two live tokens —
+// re-inviting then replaces only one, and revoking kills only one.
 companyInviteSchema.index(
-  { companyId: 1, email: 1, status: 1 },
-  { partialFilterExpression: { status: 'sent' } }
+  { companyId: 1, email: 1 },
+  { unique: true, partialFilterExpression: { status: 'sent' } }
 );
 
 const CompanyInvite = mongoose.model('CompanyInvite', companyInviteSchema);

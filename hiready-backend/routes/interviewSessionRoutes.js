@@ -3,6 +3,13 @@ const mongoose = require('mongoose');
 const InterviewSession = require('../models/InterviewSession');
 const { requireAuth } = require('../middleware/auth');
 
+/** Cast guard: an unguarded `new ObjectId(...)` throws on a malformed id. */
+function toObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(String(id))
+    ? new mongoose.Types.ObjectId(String(id))
+    : null;
+}
+
 const router = express.Router();
 router.use(requireAuth);
 
@@ -85,7 +92,7 @@ router.get('/sessions/summary', async (req, res) => {
     since.setDate(since.getDate() - 30);
 
     const [totals] = await InterviewSession.aggregate([
-      { $match: { user: new mongoose.Types.ObjectId(req.user.id) } },
+      { $match: { user: toObjectId(req.user.id) } },
       {
         $group: {
           _id: null,
