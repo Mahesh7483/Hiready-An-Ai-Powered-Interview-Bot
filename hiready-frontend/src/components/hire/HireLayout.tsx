@@ -106,9 +106,12 @@ const HireLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     <div className="min-h-screen bg-background">
       <header className="border-b border-border bg-card">
         <div className="max-w-6xl mx-auto px-6 h-16 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-8 min-w-0">
-            <span className="font-bold text-foreground shrink-0">HiREady for employers</span>
-            <nav className="flex items-center gap-1">
+          {/* The brand yields space; the nav does not. Without shrink-0 on the
+              links, adding a third item squeezed the last label to nothing —
+              "Discover" rendered as a bare icon with no way to know what it was. */}
+          <div className="flex items-center gap-4 md:gap-8 min-w-0">
+            <span className="hidden sm:inline font-bold text-foreground truncate">HiREady for employers</span>
+            <nav className="flex items-center gap-1 shrink-0">
               {NAV.map((item) => {
                 const Icon = item.icon;
                 return (
@@ -116,16 +119,19 @@ const HireLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                     key={item.to}
                     to={item.to}
                     end={item.end}
+                    aria-label={item.label}
                     className={({ isActive }) =>
-                      `flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
+                      `flex items-center gap-2 px-2.5 sm:px-3 py-2 rounded-md text-sm shrink-0 whitespace-nowrap transition-colors ${
                         isActive
                           ? "bg-secondary text-foreground font-medium"
                           : "text-muted-foreground hover:text-foreground hover:bg-secondary/60"
                       }`
                     }
                   >
-                    <Icon className="w-4 h-4" />
-                    {item.label}
+                    <Icon className="w-4 h-4 shrink-0" />
+                    {/* Below sm every label hides together, deliberately, rather
+                        than one of them disappearing because it ran out of room. */}
+                    <span className="hidden sm:inline">{item.label}</span>
                   </NavLink>
                 );
               })}
@@ -135,7 +141,7 @@ const HireLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
           <div className="flex items-center gap-3 shrink-0">
             {companies.length > 1 ? (
               <Select value={active ?? ""} onValueChange={switchTo}>
-                <SelectTrigger className="w-[200px] h-9">
+                <SelectTrigger className="w-[150px] lg:w-[200px] h-9">
                   <SelectValue placeholder="Choose a company" />
                 </SelectTrigger>
                 <SelectContent>
@@ -145,10 +151,10 @@ const HireLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
                 </SelectContent>
               </Select>
             ) : (
-              <span className="text-sm text-foreground">{companies[0].name}</span>
+              <span className="text-sm text-foreground truncate max-w-[150px] lg:max-w-none">{companies[0].name}</span>
             )}
             {current && (
-              <span className="text-xs text-muted-foreground capitalize">{current.role}</span>
+              <span className="hidden sm:inline text-xs text-muted-foreground capitalize">{current.role}</span>
             )}
           </div>
         </div>
