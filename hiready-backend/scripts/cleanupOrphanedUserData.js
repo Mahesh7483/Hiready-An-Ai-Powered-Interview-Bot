@@ -44,6 +44,7 @@ const TARGETS = [
   { collection: 'candidatecompanyconsents', field: 'candidateId' },
   { collection: 'applications', field: 'candidateId' },
   { collection: 'companymemberships', field: 'userId' },
+  { collection: 'aptitudeattempts', field: 'userId' },
 ];
 
 (async () => {

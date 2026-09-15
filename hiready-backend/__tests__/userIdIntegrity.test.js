@@ -117,6 +117,27 @@ describe('deleting a user is complete and reports what it did', () => {
     expect(cascade).not.toMatch(new RegExp(`${model}\\.deleteMany`));
   });
 
+  test('the orphan sweep covers the same collections as the cascade', () => {
+    // Two hand-written lists that must agree is one list too many: the cascade
+    // stops orphans being created, the sweep removes the ones already there.
+    // AptitudeAttempt was missing from BOTH.
+    const sweep = read('scripts/cleanupOrphanedUserData.js');
+    const missing = OWNED
+      .filter((r) => !NOT_CASCADED[`${r.model}.${r.field}`])
+      .filter((r) => {
+        // Ask mongoose for the collection name rather than guessing it.
+        // Its pluralizer is not `toLowerCase() + 's'`: ResumeAnalysis becomes
+        // `resumeanalyses`, and a guess that got that wrong would report a
+        // false miss here — or, worse, a false pass somewhere else.
+        const collection = require(path.join(BACKEND, 'models', `${r.model}.js`)).collection.name;
+        return !new RegExp(
+          `collection:\\s*'${collection}',\\s*field:\\s*'${r.field}'`
+        ).test(sweep);
+      })
+      .map((r) => `${r.model}.${r.field}`);
+    expect(missing).toEqual([]);
+  });
+
   test('the response carries per-collection deletedCount', () => {
     // The route previously returned success unconditionally, which is exactly
     // how a cascade matching zero rows looked like it had worked.
