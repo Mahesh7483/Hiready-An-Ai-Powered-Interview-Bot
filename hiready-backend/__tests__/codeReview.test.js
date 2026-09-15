@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 
 const fs = require('fs');
 const path = require('path');

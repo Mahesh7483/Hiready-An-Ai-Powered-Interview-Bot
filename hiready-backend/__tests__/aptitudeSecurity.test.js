@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/hiready-test';
 
 const request = require('supertest');
@@ -9,6 +9,7 @@ const app = require('../server');
 const Question = require('../models/Question');
 const AptitudeAttempt = require('../models/AptitudeAttempt');
 const TestResult = require('../models/TestResult');
+const User = require('../models/User');
 const InterviewSession = require('../models/InterviewSession');
 const ProctorLog = require('../models/ProctorLog');
 
@@ -41,6 +42,15 @@ describe('Aptitude Zero-Client-Trust Grading & Data Privacy Cascade Deletion', (
       InterviewSession.deleteMany({ user: { $in: [userAId, userBId] } }),
       ProctorLog.deleteMany({ userId: { $in: [userAId, userBId] } })
     ]);
+    // requireAuth confirms the account still exists, so tokens minted for ids
+    // with no User document are correctly rejected. Create the two users the
+    // fixture acts as.
+    await User.deleteMany({ _id: { $in: [userAId, userBId] } });
+    await User.create([
+      { _id: userAId, name: 'Fixture A', email: `fixture-a-${userAId}@test.invalid` },
+      { _id: userBId, name: 'Fixture B', email: `fixture-b-${userBId}@test.invalid` },
+    ]);
+
 
     // Create 4 test questions
     testQuestions = await Question.create([

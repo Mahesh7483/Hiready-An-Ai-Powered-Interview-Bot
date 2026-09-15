@@ -1,4 +1,4 @@
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/hiready-test';
 
 const request = require('supertest');
@@ -12,6 +12,7 @@ const AptitudeAttempt = require('../models/AptitudeAttempt');
 const TestResult = require('../models/TestResult');
 const InterviewSession = require('../models/InterviewSession');
 const ProctorLog = require('../models/ProctorLog');
+const User = require('../models/User');
 
 describe('Failure Recovery, Interrupted Writes & Partial Deletion Fallback Tests', () => {
   const userId = new mongoose.Types.ObjectId();
@@ -24,6 +25,10 @@ describe('Failure Recovery, Interrupted Writes & Partial Deletion Fallback Tests
       await mongoose.connect(process.env.MONGO_URI);
     }
     await TestResult.syncIndexes();
+    // requireAuth confirms the account still exists, so a token minted for an
+    // id with no User document is now correctly rejected. Create the user the
+    // fixture claims to be.
+    await User.create({ _id: userId, name: 'Recovery Fixture', email: `recovery-${userId}@test.invalid` });
   });
 
   afterAll(async () => {
@@ -31,6 +36,7 @@ describe('Failure Recovery, Interrupted Writes & Partial Deletion Fallback Tests
     await TestResult.deleteMany({ userId });
     await InterviewSession.deleteMany({ user: userId });
     await ProctorLog.deleteMany({ user: userId });
+    await User.deleteOne({ _id: userId });
     if (mongoose.connection.readyState === 1) {
       await mongoose.disconnect();
     }

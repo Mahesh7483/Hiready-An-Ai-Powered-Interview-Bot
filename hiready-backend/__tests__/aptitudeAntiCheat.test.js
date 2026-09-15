@@ -97,39 +97,49 @@ describe('an issued attempt carries a server-side deadline', () => {
   });
 });
 
-describe('the practice reveal is bound, not an oracle', () => {
-  const reveal = questionRoutes.slice(
-    questionRoutes.indexOf("router.post('/quiz/attempt/:attemptId/reveal'"),
-    questionRoutes.indexOf('// GET /api/questions/leaderboard')
-  );
-
-  test('the endpoint exists and is authenticated', () => {
-    expect(reveal.length).toBeGreaterThan(400);
-    expect(reveal.slice(0, 120)).toMatch(/requireAuth/);
+describe('no route reveals an answer mid-attempt', () => {
+  test('the reveal endpoint is gone', () => {
+    // It existed briefly to give practice per-question feedback after the open
+    // oracle was deleted. Practice now answers everything and reviews against
+    // the server's grading at the end, so there is no mid-attempt reveal path
+    // to guard — which is stronger than guarding one.
+    expect(questionRoutes).not.toMatch(/router\.post\([^)]*reveal/);
   });
 
-  test.each([
-    ['ownership', /attempt\.userId\) !== String\(req\.user\.id\)/],
-    ['in-progress only', /attempt\.status !== 'in_progress'/],
-    ['expiry', /attempt\.expiresAt/],
-    ['question must belong to the attempt', /attempt\.questionIds\.some/],
-  ])('it enforces %s', (_label, re) => {
-    expect(reveal).toMatch(re);
+  test('no handler returns an answer key field', () => {
+    expect(questionRoutes).not.toMatch(/correctAnswer:\s*(question|key|String\(key)/);
   });
 
-  test('a graded test can never reveal an answer', () => {
-    // The whole reason two modes exist.
-    expect(reveal).toMatch(/attempt\.mode !== 'practice'/);
-    expect(reveal).toMatch(/not revealed during a graded test/i);
+  test('the client has no reveal call', () => {
+    expect(aptitudeTest).not.toMatch(/\/reveal/);
+  });
+});
+
+describe('the attempt id reaches the browser', () => {
+  test('both question routes return attemptId in the BODY', () => {
+    // It was sent only as an X-Attempt-Id response header, which a
+    // cross-origin browser cannot read without Access-Control-Expose-Headers.
+    // The client therefore always saw null, and every graded action failed
+    // with "not registered" — practice could not even be finished.
+    expect(questionRoutes).toMatch(/res\.json\(\{ attemptId, questions: sanitized \}\)/);
+    const adaptive = questionRoutes.slice(questionRoutes.indexOf("'/quiz/:category/adaptive'"));
+    expect(adaptive.slice(0, 4000)).toMatch(/attemptId,/);
   });
 
-  test('the caller must commit an answer before seeing the key', () => {
-    expect(reveal).toMatch(/selected is required before an answer can be revealed/);
+  test('no route relies on a custom header to carry it', () => {
+    expect(questionRoutes).not.toMatch(/setHeader\('X-Attempt-Id'/);
   });
 
-  test('revealing is recorded against the attempt', () => {
-    // So a walked-through practice run cannot later read as an unaided score.
-    expect(reveal).toMatch(/revealedQuestionIds/);
+  test('the adaptive route issues an attempt at all', () => {
+    // It projected Answer out of its samples, so it had no key to lock and
+    // issued nothing — adaptive runs could never be graded.
+    const adaptive = questionRoutes.slice(questionRoutes.indexOf("'/quiz/:category/adaptive'"));
+    expect(adaptive.slice(0, 4000)).toMatch(/issueAptitudeAttempt\(/);
+  });
+
+  test('the client reads it from the body and fails loudly without it', () => {
+    expect(aptitudeTest).toMatch(/attemptIdRef\.current = data\.attemptId/);
+    expect(aptitudeTest).toMatch(/did not register this session/);
   });
 });
 
@@ -151,7 +161,7 @@ describe('the browser never grades', () => {
   });
 
   test('it declares the mode to the server, not just to the UI', () => {
-    expect(aptitudeTest).toMatch(/mode=\$\{isPractice \? "practice" : "test"\}/);
+    expect(aptitudeTest).toMatch(/mode: isPractice \? "practice" : "test"/);
   });
 });
 

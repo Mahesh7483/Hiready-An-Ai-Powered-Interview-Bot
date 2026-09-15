@@ -15,6 +15,22 @@ process.on('uncaughtException', (err) => {
     process.exit(1);
   }
 });
+/**
+ * Fail fast on a missing or weak signing key.
+ *
+ * middleware/auth.js verifies with process.env.JWT_SECRET, and one helper used
+ * to fall back to the literal 'secret' when it was unset — forgeable by anyone.
+ * The fallback is gone; this makes the condition that motivated it impossible
+ * instead of merely unreachable. The README claimed compose enforced this; the
+ * application did not.
+ */
+if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32) {
+  throw new Error(
+    'JWT_SECRET must be set and at least 32 characters. '
+    + 'Generate one with crypto.randomBytes(48).toString("hex").'
+  );
+}
+
 // 2. Create app
 const app = express();
 app.set('trust proxy', 1);
@@ -39,7 +55,13 @@ app.use(
       // Allow any localhost/127.0.0.1 origin (dev convenience: Vite may serve
       // via 127.0.0.1 or a LAN IP in some setups). Production origins are
       // controlled strictly via CORS_ORIGINS — this regex never matches them.
-      if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+      // Development convenience only. In production the allowlist is the whole
+      // policy — otherwise anything serving from localhost on an operator's
+      // machine can call a production API with credentials.
+      if (
+        process.env.NODE_ENV !== 'production'
+        && /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)
+      ) {
         return callback(null, true);
       }
       return callback(new Error('Not allowed by CORS'));

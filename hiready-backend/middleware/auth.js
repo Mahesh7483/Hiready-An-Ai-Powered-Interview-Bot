@@ -2,10 +2,57 @@ const jwt = require("jsonwebtoken");
 const User = require("../models/User");
 
 /**
+ * How long a confirmed account is trusted before it is re-checked.
+ *
+ * Verifying the signature alone means a DELETED user keeps full access until
+ * their token expires — up to 24 hours. Re-reading the user on every request
+ * closes that, but makes authentication depend on a database round trip per
+ * request: a Mongo blip would then log every user out at once, which is a
+ * worse failure than the window it removes.
+ *
+ * So: confirm once, then trust for a minute. Revocation lands within 60s
+ * instead of 24h, and the steady-state cost is one lookup per user per minute.
+ */
+const EXISTENCE_TTL_MS = 60_000;
+const confirmedUntil = new Map();
+
+/** Keeps the map from growing without bound on a long-lived process. */
+function sweepConfirmed(now) {
+  if (confirmedUntil.size < 5000) return;
+  for (const [id, until] of confirmedUntil) {
+    if (until <= now) confirmedUntil.delete(id);
+  }
+}
+
+async function accountStillExists(userId) {
+  const now = Date.now();
+  const until = confirmedUntil.get(userId);
+  if (until && until > now) return true;
+
+  try {
+    const found = await User.exists({ _id: userId }).maxTimeMS(3000);
+    if (!found) {
+      confirmedUntil.delete(userId);
+      return false;
+    }
+    sweepConfirmed(now);
+    confirmedUntil.set(userId, now + EXISTENCE_TTL_MS);
+    return true;
+  } catch (err) {
+    // The database is unreachable or slow. A valid, unexpired, correctly
+    // signed token is still evidence of authentication; refusing it here
+    // would turn a storage hiccup into a full outage. Logged so the gap is
+    // visible rather than silent.
+    console.warn('[auth] account existence check unavailable:', err.message);
+    return true;
+  }
+}
+
+/**
  * Verifies the Bearer JWT issued by /api/auth/login.
  * Attaches `req.user = { id }` on success; rejects otherwise.
  */
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
 
@@ -13,16 +60,22 @@ function requireAuth(req, res, next) {
     return res.status(401).json({ error: "Authentication required" });
   }
 
+  let payload;
   try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (!payload || !payload.id) {
-      return res.status(401).json({ error: "Invalid token payload" });
-    }
-    req.user = { id: payload.id };
-    return next();
+    payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
+  if (!payload || !payload.id) {
+    return res.status(401).json({ error: "Invalid token payload" });
+  }
+
+  if (!(await accountStillExists(payload.id))) {
+    return res.status(401).json({ error: "Invalid or expired token" });
+  }
+
+  req.user = { id: payload.id };
+  return next();
 }
 
 /**
@@ -40,7 +93,7 @@ async function requireAdmin(req, res, next) {
 
   let payload;
   try {
-    payload = jwt.verify(token, process.env.JWT_SECRET);
+    payload = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
   } catch {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
@@ -62,4 +115,4 @@ async function requireAdmin(req, res, next) {
   }
 }
 
-module.exports = { requireAuth, requireAdmin };
+module.exports = { requireAuth, requireAdmin, _confirmedUntil: confirmedUntil };

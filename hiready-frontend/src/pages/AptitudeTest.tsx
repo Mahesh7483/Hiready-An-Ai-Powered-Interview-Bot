@@ -89,11 +89,7 @@ const AptitudeTest = (props: AptitudeTestProps) => {
   const warningCountRef = useRef(0);
 
   // Practice-only states
-  const [showExplanation, setShowExplanation] = useState(false);
-  const [answeredCorrectly, setAnsweredCorrectly] = useState<boolean | null>(null);
-  const [loadingMore, setLoadingMore] = useState(false);
   // Adaptive difficulty: running accuracy of this practice session
-  const practiceStatsRef = useRef({ correct: 0, total: 0 });
 
   /**
    * Tab / fullscreen / clipboard proctoring for a timed test.
@@ -165,29 +161,33 @@ const AptitudeTest = (props: AptitudeTestProps) => {
     enabled: showGuidelines,
     staleTime: 5 * 60 * 1000,
     queryFn: async (): Promise<QuizQuestion[]> => {
-      if (adaptive) {
-        // Adaptive mode: server picks a difficulty ladder from recent history
-        const response = await fetch(
-          `${API_BASE_URL}/questions/quiz/${topic}/adaptive?count=${questionCount}`,
-          { headers: getAuthHeaders() }
-        );
-        if (!response.ok) throw new Error("Failed to load questions");
-        const data = await response.json();
-        return (data.questions ?? []) as QuizQuestion[];
-      }
-      // mode is declared to the server, not just to the UI: a 'test' attempt
-      // will refuse to reveal answers, and that refusal is what makes the two
-      // modes mean anything.
-      const url = `${API_BASE_URL}/questions/quiz/${topic}?count=${questionCount}`
-        + `&mode=${isPractice ? "practice" : "test"}`
-        + (difficulty ? `&difficulty=${difficulty}` : "");
+      // The attempt id arrives in the response BODY. It was briefly read from
+      // an X-Attempt-Id header, which a cross-origin browser cannot see unless
+      // the server lists it in Access-Control-Expose-Headers — so it was always
+      // null here, and every graded action failed with "not registered".
+      const qs = new URLSearchParams({
+        count: String(questionCount),
+        mode: isPractice ? "practice" : "test",
+      });
+      if (negativeMarking) qs.set("negativeMarking", "true");
+      if (difficulty && !adaptive) qs.set("difficulty", difficulty);
+
+      const url = adaptive
+        ? `${API_BASE_URL}/questions/quiz/${topic}/adaptive?${qs}`
+        : `${API_BASE_URL}/questions/quiz/${topic}?${qs}`;
+
       const response = await fetch(url, { headers: getAuthHeaders() });
-      if (!response.ok) throw new Error("Failed to load questions");
-      // The server issues an AptitudeAttempt alongside the questions and names
-      // it here. Grading is impossible without it — by design.
-      const issued = response.headers.get("X-Attempt-Id");
-      if (issued) attemptIdRef.current = issued;
-      return response.json();
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to load questions");
+      }
+      const data = await response.json();
+      if (!data.attemptId) {
+        // Without it nothing can be graded, so say so now rather than at submit.
+        throw new Error("The server did not register this session");
+      }
+      attemptIdRef.current = data.attemptId;
+      return (data.questions ?? []) as QuizQuestion[];
     },
   });
 
@@ -258,109 +258,22 @@ const AptitudeTest = (props: AptitudeTestProps) => {
   };
 
   const handleSelectOption = (optionKey: string) => {
-    if (showExplanation) return; // Lock selection after showing explanation in practice
     const letter = optionKey.charAt(optionKey.length - 1);
     setSelectedOption(letter);
   };
 
-  // Practice mode: grade a single answer via the backend
-  const checkAnswerMutation = useMutation({
-    mutationFn: async ({ questionId, selected }: { questionId: string; selected: string }) => {
-      // Reveals ONE answer, from this user's own in-progress PRACTICE attempt.
-      // The endpoint it replaced took any question id from anyone, with no
-      // auth and no attempt, and handed back the correct answer.
-      const attemptId = attemptIdRef.current;
-      if (!attemptId) throw new Error("This practice session is not registered with the server");
-      const response = await fetch(
-        `${API_BASE_URL}/questions/quiz/attempt/${attemptId}/reveal`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
-          body: JSON.stringify({ questionId, selected }),
-        }
-      );
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.error || "Failed to check answer");
-      }
-      const data = await response.json();
-      // Shaped like the old response so the caller below is unchanged.
-      return { results: [data] };
-    },
-    onSuccess: (data, variables) => {
-      const res = data.results?.[0];
-      if (res) {
-        setAnsweredCorrectly(res.isCorrect);
-        practiceStatsRef.current.total += 1;
-        if (res.isCorrect) practiceStatsRef.current.correct += 1;
-        setSelectedAnswers((prev) => [
-          ...prev.filter((a) => a.questionId !== variables.questionId),
-          { questionId: variables.questionId, selected: variables.selected },
-        ]);
-        // Temporarily store correct answer on the question object for explanation display
-        setQuestions((prev) =>
-          prev.map((q) =>
-            q._id === variables.questionId ? { ...q, Answer: res.correctAnswer } : q
-          )
-        );
-      }
-      setShowExplanation(true);
-    },
-    onError: () => toast.error("Failed to check answer"),
-  });
-
-  // Practice mode: check answer & show explanation
-  const handleCheckAnswer = () => {
-    if (!selectedOption) {
-      toast.error("Please select an answer first");
-      return;
-    }
-    const currentQuestion = questions[currentQuestionIndex];
-    checkAnswerMutation.mutate({ questionId: currentQuestion._id, selected: selectedOption });
-  };
-
-  // Practice mode: load 5 more questions — difficulty adapts to session accuracy
-  const loadMoreMutation = useMutation({
-    mutationFn: async (): Promise<{ data: QuizQuestion[]; adaptedDifficulty?: string }> => {
-      const stats = practiceStatsRef.current;
-      let adaptedDifficulty: string | undefined;
-      if (stats.total >= 4) {
-        const acc = stats.correct / stats.total;
-        const ladder = ["easy", "medium", "hard"];
-        const currentIdx = ladder.indexOf(difficulty || "medium");
-        if (acc >= 0.8 && currentIdx < ladder.length - 1) {
-          adaptedDifficulty = ladder[currentIdx + 1];
-        } else if (acc <= 0.4 && currentIdx > 0) {
-          adaptedDifficulty = ladder[currentIdx - 1];
-        }
-      }
-      const effectiveDifficulty = adaptedDifficulty ?? difficulty;
-      const url = `${API_BASE_URL}/questions/quiz/${topic}?count=5${effectiveDifficulty ? `&difficulty=${effectiveDifficulty}` : ""}`;
-      const response = await fetch(url);
-      if (!response.ok) throw new Error("Failed to load more questions");
-      return { data: await response.json(), adaptedDifficulty };
-    },
-    onSuccess: ({ data, adaptedDifficulty }) => {
-      setQuestions((prev) => [...prev, ...data]);
-      if (adaptedDifficulty) {
-        toast.info(`Adaptive mode: switching to ${adaptedDifficulty} questions based on your accuracy`);
-      }
-    },
-    onError: () => toast.error("Failed to load more questions"),
-  });
-
-  const handleLoadMore = async () => {
-    setLoadingMore(true);
-    try {
-      await loadMoreMutation.mutateAsync(undefined);
-    } finally {
-      setLoadingMore(false);
-    }
-  };
+  /*
+   * REMOVED: "Load 5 more questions".
+   *
+   * The attempt locks its question ids at issue time, so anything appended
+   * afterwards is a foreign id that save-result rejects — the session became
+   * ungradeable the moment you used it. How many questions you want is now
+   * chosen on the start screen instead.
+   */
 
   const handleNavigateToQuestion = (index: number) => {
     // Save current answer if one is selected
-    if (selectedOption && !showExplanation) {
+    if (selectedOption) {
       const updatedAnswers = [
         ...selectedAnswers.filter((a) => a.questionId !== questions[currentQuestionIndex]._id),
         {
@@ -373,8 +286,6 @@ const AptitudeTest = (props: AptitudeTestProps) => {
 
     setCurrentQuestionIndex(index);
     setVisitedQuestions((prev) => new Set(prev).add(questions[index]._id));
-    setShowExplanation(false);
-    setAnsweredCorrectly(null);
 
     const previousAnswer = selectedAnswers.find(
       (a) => a.questionId === questions[index]._id
@@ -394,29 +305,6 @@ const AptitudeTest = (props: AptitudeTestProps) => {
   };
 
   const handleNextQuestion = () => {
-    // In practice mode with explanation shown, just move forward
-    if (isPractice && showExplanation) {
-      setShowExplanation(false);
-      setAnsweredCorrectly(null);
-      setSelectedOption("");
-      if (currentQuestionIndex < questions.length - 1) {
-        setCurrentQuestionIndex(currentQuestionIndex + 1);
-        setVisitedQuestions((prev) => new Set(prev).add(questions[currentQuestionIndex + 1]._id));
-        const nextAnswer = selectedAnswers.find(
-          (a) => a.questionId === questions[currentQuestionIndex + 1]._id
-        );
-        if (nextAnswer) setSelectedOption(nextAnswer.selected);
-      } else {
-        handleEndTest();
-      }
-      return;
-    }
-
-    if (!selectedOption) {
-      toast.error("Please select an answer before proceeding");
-      return;
-    }
-
     const updatedAnswers = [
       ...selectedAnswers.filter((a) => a.questionId !== questions[currentQuestionIndex]._id),
       {
@@ -730,43 +618,25 @@ const AptitudeTest = (props: AptitudeTestProps) => {
                   const letter = optionKey.charAt(optionKey.length - 1);
                   const optionValue = currentQuestion[optionKey as keyof QuizQuestion];
 
-                  // In practice mode with explanation shown, highlight correct/wrong
-                  let explanationClass = "";
-                  if (isPractice && showExplanation) {
-                    if (letter === currentQuestion.Answer) {
-                      explanationClass = "border-emerald-500 bg-emerald-500/10";
-                    } else if (letter === selectedOption && !answeredCorrectly) {
-                      explanationClass = "border-red-500 bg-red-500/10";
-                    }
-                  }
-
                   return (
                     <button
                       key={optionKey}
                       onClick={() => handleSelectOption(optionKey)}
-                      disabled={isPractice && showExplanation}
                       className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                        explanationClass ||
-                        (selectedOption === letter
+                        selectedOption === letter
                           ? "border-primary bg-primary/10 shadow-md"
-                          : "border-border bg-card hover:border-primary/50 hover:bg-accent/50")
-                      } ${isPractice && showExplanation ? "cursor-default" : ""}`}
+                          : "border-border bg-card hover:border-primary/50 hover:bg-accent/50"
+                      }`}
                     >
                       <div className="flex items-center gap-3">
                         <div
                           className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                            explanationClass
-                              ? letter === currentQuestion.Answer
-                                ? "border-emerald-500 bg-emerald-500"
-                                : letter === selectedOption
-                                ? "border-red-500 bg-red-500"
-                                : "border-muted-foreground"
-                              : selectedOption === letter
+                            selectedOption === letter
                               ? "border-primary bg-primary"
                               : "border-muted-foreground"
                           }`}
                         >
-                          {(selectedOption === letter || (showExplanation && letter === currentQuestion.Answer)) && (
+                          {selectedOption === letter && (
                             <div className="w-3 h-3 rounded-full bg-white" />
                           )}
                         </div>
@@ -777,61 +647,31 @@ const AptitudeTest = (props: AptitudeTestProps) => {
                 })}
               </div>
 
-              {/* Practice mode: explanation after checking */}
-              {isPractice && showExplanation && (
-                <div className={`mt-6 p-4 rounded-lg border-2 ${answeredCorrectly ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950" : "border-red-500 bg-red-50 dark:bg-red-950"}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    {answeredCorrectly ? (
-                      <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    ) : (
-                      <XCircle className="w-5 h-5 text-red-600" />
-                    )}
-                    <span className={`font-semibold ${answeredCorrectly ? "text-emerald-700 dark:text-emerald-400" : "text-red-700 dark:text-red-400"}`}>
-                      {answeredCorrectly ? "Correct!" : "Incorrect"}
-                    </span>
-                  </div>
-                  {!answeredCorrectly && (
-                    <p className="text-sm text-muted-foreground">
-                      The correct answer is <span className="font-semibold text-foreground">{currentQuestion.Answer}. {currentQuestion[`Option ${currentQuestion.Answer}` as keyof QuizQuestion]}</span>
-                    </p>
-                  )}
-                  {currentQuestion.Explanation && (
-                    <div className="mt-3 pt-3 border-t border-border/60">
-                      <p className="text-xs font-semibold uppercase tracking-wide text-primary mb-1">Explanation</p>
-                      <p className="text-sm text-muted-foreground">{currentQuestion.Explanation}</p>
-                    </div>
-                  )}
-                </div>
-              )}
             </Card>
 
-            {/* Navigation Buttons */}
+            {/* Navigation */}
             <div className="flex justify-between items-center gap-4">
               <Button
                 onClick={handleEndTest}
                 variant="outline"
                 className="text-destructive hover:text-destructive border-destructive/50"
               >
-                {isPractice ? "End Practice" : "End Test"}
+                {isPractice ? "End practice" : "End test"}
               </Button>
 
               <div className="flex items-center gap-3">
-                {/* Both modes: persist this question to the saved notebook */}
                 <Button
                   onClick={toggleBookmark}
                   variant="outline"
-                  className={`${
-                    bookmarked.has(questions[currentQuestionIndex]._id)
-                      ? "border-amber-500 bg-amber-500/10 text-amber-600"
-                      : "border-border text-muted-foreground"
-                  }`}
+                  className={bookmarked.has(questions[currentQuestionIndex]._id)
+                    ? "border-warning text-warning"
+                    : "border-border text-muted-foreground"}
                 >
-                  <BookmarkCheck className={`w-4 h-4 mr-2 ${bookmarked.has(questions[currentQuestionIndex]._id) ? "fill-amber-500" : ""}`} />
+                  <BookmarkCheck className={`w-4 h-4 mr-2 ${bookmarked.has(questions[currentQuestionIndex]._id) ? "fill-warning" : ""}`} />
                   {bookmarked.has(questions[currentQuestionIndex]._id) ? "Saved" : "Save"}
                 </Button>
 
-                {/* Practice: skip button */}
-                {isPractice && !showExplanation && (
+                {isPractice && (
                   <Button
                     onClick={handleSkipQuestion}
                     variant="outline"
@@ -869,44 +709,22 @@ const AptitudeTest = (props: AptitudeTestProps) => {
                   </Button>
                 )}
 
-                {/* Practice mode: Check Answer or Next */}
-                {isPractice && !showExplanation ? (
-                  <Button
-                    onClick={handleCheckAnswer}
-                    disabled={!selectedOption}
-                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-8"
-                  >
-                    <Eye className="w-4 h-4 mr-2" />
-                    Check Answer
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={handleNextQuestion}
-                    disabled={!isPractice && !selectedOption}
-                    className={`text-white px-8 ${isPractice ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gradient-primary hover:opacity-90"}`}
-                  >
-                    {currentQuestionIndex === questions.length - 1
-                      ? isPractice ? "Finish Practice" : "Finish Test"
-                      : "Next Question"}
-                  </Button>
-                )}
+                {/* One button in both modes. Practice used to show "Check
+                    Answer" here and only swapped to Next/Finish once a reveal
+                    succeeded — so when the reveal failed there was no way to
+                    advance or to finish at all. */}
+                <Button
+                  onClick={handleNextQuestion}
+                  disabled={!isPractice && !selectedOption}
+                  className="px-8 bg-gradient-primary hover:opacity-90 text-white"
+                >
+                  {currentQuestionIndex === questions.length - 1
+                    ? isPractice ? "Finish practice" : "Finish test"
+                    : "Next question"}
+                </Button>
               </div>
             </div>
 
-            {/* Practice mode: load more questions */}
-            {isPractice && currentQuestionIndex === questions.length - 1 && (
-              <div className="mt-4 text-center">
-                <Button
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                  variant="outline"
-                  className="border-emerald-300 text-emerald-600 hover:bg-emerald-50"
-                >
-                  <Plus className="w-4 h-4 mr-2" />
-                  {loadingMore ? "Loading..." : "Load 5 More Questions"}
-                </Button>
-              </div>
-            )}
           </div>
 
           {/* Right: Question Navigator + Proctoring (test mode only) */}

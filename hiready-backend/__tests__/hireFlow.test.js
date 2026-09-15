@@ -11,7 +11,7 @@
  * requireCompanyRole -> candidateAccess is itself part of what is under test.
  * Models are in-memory (see support/hireDb.js); no database is required.
  */
-process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci';
+process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.NODE_ENV = 'test';
 
 jest.mock('../models/Company', () => require('./support/hireDb').collection('companies'));

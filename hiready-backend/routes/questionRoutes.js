@@ -11,13 +11,50 @@ const { DIFFICULTIES } = require('../utils/constants');
 
 const SUBMISSION_LEASE_DURATION_MS = parseInt(process.env.SUBMISSION_LEASE_DURATION_MS, 10) || 60000;
 
+/**
+ * Issues a server-authoritative AptitudeAttempt and returns its id.
+ *
+ * The id is returned in the RESPONSE BODY, never only in a header. It was
+ * briefly sent as X-Attempt-Id, which a cross-origin browser cannot read
+ * unless the server lists it in Access-Control-Expose-Headers — so the client
+ * silently received null and every graded action failed. The body is not
+ * subject to that rule.
+ *
+ * `questions` must still carry Answer; the caller strips it before responding.
+ */
+async function issueAptitudeAttempt({ userId, questions, topic, difficulty, mode, negativeMarking }) {
+  const answerKey = new Map();
+  questions.forEach((q) => {
+    answerKey.set(String(q._id), String(q.Answer || '').trim().toUpperCase());
+  });
+  const attempt = new AptitudeAttempt({
+    userId,
+    topic: topic || 'logical',
+    difficulty: difficulty || '',
+    mode: mode === 'practice' ? 'practice' : 'test',
+    negativeMarking: Boolean(negativeMarking),
+    questionIds: questions.map((q) => q._id),
+    answerKey,
+    status: 'in_progress',
+    keyVersion: 1,
+    startedAt: new Date(),
+    // Backstop only — the client clock runs the real countdown. save-result
+    // refuses an expired attempt, so a tight value here would destroy honest work.
+    expiresAt: new Date(Date.now() + (questions.length * 3 + 15) * 60000),
+  });
+  await attempt.save();
+  return String(attempt._id);
+}
+
 // Helper to extract authenticated user id from Authorization header if present
 function getAuthUserId(req) {
   try {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.split(' ')[1];
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+      // No `|| 'secret'` fallback: an unset JWT_SECRET must fail closed, not
+      // fall back to a literal any attacker can sign with.
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ['HS256'] });
       return decoded.id || decoded.userId || null;
     }
   } catch {
@@ -104,7 +141,6 @@ router.post('/quiz/start', requireAuth, async (req, res) => {
       return safe;
     });
 
-    res.setHeader('X-Attempt-Id', String(attempt._id));
     res.status(201).json({
       attemptId: attempt._id,
       topic: attempt.topic,
@@ -160,46 +196,22 @@ router.get('/quiz/:category', requireAuth, async (req, res) => {
       questions = [...questions, ...fill];
     }
 
-    // If caller is authenticated, automatically issue an AptitudeAttempt session
-    const authUserId = getAuthUserId(req);
-    if (authUserId && questions.length > 0) {
-      try {
-        const answerKey = new Map();
-        questions.forEach((q) => {
-          answerKey.set(String(q._id), String(q.Answer || '').trim().toUpperCase());
-        });
-        const attempt = new AptitudeAttempt({
-          userId: authUserId,
-          topic: resolved || req.params.category || 'logical',
-          difficulty: difficulty || '',
-          mode: mode === 'practice' ? 'practice' : 'test',
-          negativeMarking: negativeMarking === 'true' || negativeMarking === '1',
-          questionIds: questions.map((q) => q._id),
-          answerKey,
-          status: 'in_progress',
-          keyVersion: 1,
-          startedAt: new Date(),
-          // A server-side backstop so an attempt cannot be parked and resumed
-          // days later with the answers looked up in between. Deliberately
-          // generous — the client clock runs the real countdown, this only
-          // stops an abandoned attempt being revived. save-result rejects an
-          // expired attempt, so a tight value here would destroy honest work.
-          expiresAt: new Date(Date.now() + (questions.length * 3 + 15) * 60000)
-        });
-        await attempt.save();
-        res.setHeader('X-Attempt-Id', String(attempt._id));
-      } catch (attErr) {
-        console.error('Auto attempt issuance error:', attErr.message);
-      }
-    }
+    const attemptId = await issueAptitudeAttempt({
+      userId: req.user.id,
+      questions,
+      topic: resolved || req.params.category,
+      difficulty,
+      mode,
+      negativeMarking: negativeMarking === 'true' || negativeMarking === '1',
+    });
 
-    // Never expose Answer to the client
+    // Answer and Explanation never cross this line.
     const sanitized = questions.map((q) => {
       const { Answer, Explanation, ...safe } = q;
       return safe;
     });
 
-    res.json(sanitized);
+    res.json({ attemptId, questions: sanitized });
   } catch (err) {
     console.error('Quiz fetch error:', err.message);
     res.status(500).json({ error: 'Failed to load questions' });
@@ -272,7 +284,23 @@ router.get('/quiz/:category/adaptive', requireAuth, async (req, res) => {
       fill.forEach((q) => { seen.add(q._id); if (questions.length < count) questions.push(q); });
     }
 
+    // This route projects Answer out of its samples, so it had no key to lock
+    // and issued no attempt at all — adaptive runs could never be graded.
+    // Re-read just the keys for the chosen ids, then issue.
+    const withKeys = await Question.find({ _id: { $in: questions.map((q) => q._id) } })
+      .select('_id Answer')
+      .lean();
+    const attemptId = await issueAptitudeAttempt({
+      userId: req.user.id,
+      questions: withKeys,
+      topic: req.params.category,
+      difficulty: '',
+      mode: req.query.mode,
+      negativeMarking: req.query.negativeMarking === 'true' || req.query.negativeMarking === '1',
+    });
+
     res.json({
+      attemptId,
       startDifficulty: order[startLevel],
       recentAccuracy: Math.round(accuracy * 100),
       questions,
@@ -302,81 +330,16 @@ router.get('/quiz/:category/adaptive', requireAuth, async (req, res) => {
  * from the caller's own in-progress PRACTICE attempt.
  */
 
-/**
- * POST /api/questions/quiz/attempt/:attemptId/reveal   { questionId, selected }
+/*
+ * REMOVED: POST /quiz/attempt/:attemptId/reveal
  *
- * Practice-mode feedback: the correct answer and explanation for ONE question.
- *
- * Every condition below exists to stop this becoming the oracle it replaces:
- *   - authenticated, and the attempt must belong to the caller
- *   - the attempt must still be in progress and unexpired
- *   - mode must be 'practice'. A graded test can never reveal an answer,
- *     which is the whole point of having two modes
- *   - the question must be one of the ids locked into THIS attempt, so a
- *     harvested id from elsewhere resolves to nothing
- *   - one question per call, and the caller must commit a choice first
- *
- * The commitment is recorded on the attempt. Revealing is not free: it marks
- * that question, so a practice run cannot later be presented as an unaided one.
+ * It existed to give practice mode per-question feedback after the open
+ * answer-key oracle was deleted. Practice no longer reveals answers mid-run at
+ * all — you answer every question, submit, and review the whole thing against
+ * the server's grading, exactly as a test works minus the timer and the
+ * proctoring. That removes a reveal path entirely rather than guarding one,
+ * and removes the mid-attempt network call that could strand a session.
  */
-router.post('/quiz/attempt/:attemptId/reveal', requireAuth, async (req, res) => {
-  try {
-    const { attemptId } = req.params;
-    const { questionId, selected } = req.body;
-
-    if (!mongoose.Types.ObjectId.isValid(attemptId)) {
-      return res.status(400).json({ error: 'Valid attemptId is required' });
-    }
-    if (!questionId || !mongoose.Types.ObjectId.isValid(questionId)) {
-      return res.status(400).json({ error: 'Valid questionId is required' });
-    }
-    if (typeof selected !== 'string' || !selected.trim()) {
-      // Answer first, then see. Otherwise this is just a lookup.
-      return res.status(400).json({ error: 'selected is required before an answer can be revealed' });
-    }
-
-    const attempt = await AptitudeAttempt.findById(attemptId);
-    // One shape for every refusal below: a caller must not be able to tell
-    // "no such attempt" from "not yours" from "already finished".
-    const refuse = () => res.status(404).json({ error: 'Attempt not available' });
-
-    if (!attempt) return refuse();
-    if (String(attempt.userId) !== String(req.user.id)) return refuse();
-    if (attempt.status !== 'in_progress') return refuse();
-    if (attempt.expiresAt && attempt.expiresAt < new Date()) return refuse();
-    if (attempt.mode !== 'practice') {
-      return res.status(403).json({ error: 'Answers are not revealed during a graded test' });
-    }
-    if (!attempt.questionIds.some((id) => String(id) === String(questionId))) return refuse();
-
-    const key = attempt.answerKey instanceof Map
-      ? attempt.answerKey.get(String(questionId))
-      : (attempt.answerKey || {})[String(questionId)];
-    if (!key) return refuse();
-
-    const chosen = String(selected).trim().toUpperCase();
-    const isCorrect = chosen === String(key).trim().toUpperCase();
-
-    // Record that this one was revealed, and what was chosen before seeing it.
-    await AptitudeAttempt.updateOne(
-      { _id: attempt._id, userId: req.user.id },
-      { $addToSet: { revealedQuestionIds: questionId } }
-    );
-
-    const question = await Question.findById(questionId).select('Explanation').lean();
-
-    res.json({
-      questionId,
-      selected: chosen,
-      correctAnswer: String(key).trim().toUpperCase(),
-      isCorrect,
-      explanation: question ? question.Explanation || '' : '',
-    });
-  } catch (err) {
-    console.error('Reveal answer error:', err.message);
-    res.status(500).json({ error: 'Failed to reveal answer' });
-  }
-});
 
 // GET /api/questions/leaderboard?range=week|all — top users by accuracy
 router.get('/leaderboard', requireAuth, async (req, res) => {
