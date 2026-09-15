@@ -113,7 +113,7 @@ const HirePipeline = () => {
 
                 {/* Funnel counts. Identity is deliberately absent from this
                     view — position in the pipeline is not a person. */}
-                <div className="grid grid-cols-4 md:grid-cols-7 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2">
                   {FUNNEL.map((stage) => {
                     const n = job.funnel?.[stage] ?? 0;
                     return (
@@ -126,7 +126,7 @@ const HirePipeline = () => {
                         <div className={`text-lg font-bold ${n > 0 ? "text-foreground" : "text-muted-foreground"}`}>
                           {n}
                         </div>
-                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground truncate">
+                        <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
                           {stage}
                         </div>
                       </div>
