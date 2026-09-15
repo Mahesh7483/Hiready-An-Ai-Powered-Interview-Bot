@@ -101,4 +101,21 @@ router.get('/proctor-logs/:sessionId', requireAuth, async (req, res) => {
   }
 });
 
+// DELETE /api/interview/proctor-logs/:sessionId — delete proctor logs for the authenticated user
+router.delete('/proctor-logs/:sessionId', requireAuth, async (req, res) => {
+  try {
+    const result = await ProctorLog.deleteMany({
+      sessionId: req.params.sessionId,
+      userId: req.user.id
+    });
+    res.json({
+      message: 'Proctor logs deleted',
+      deletedCount: result.deletedCount
+    });
+  } catch (err) {
+    console.error('Delete proctor logs error:', err.message);
+    res.status(500).json({ error: 'Failed to delete proctor logs' });
+  }
+});
+
 module.exports = router;

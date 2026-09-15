@@ -1,0 +1,30 @@
+HIREady harness - manifest
+Revision: 2026-09-08b post-probe
+
+Archive: hiready-harness-2026-09-08b.tar.gz
+414d1fbb6d3b7958  experiments/MANIFEST.txt
+b8f77a96511039fa  experiments/README.md
+c25ac4b9611572a3  experiments/VERSION.md
+9aad3b60b0a89927  experiments/check-pipeline-sync.js
+2055032abd480c6f  experiments/corpus/injections.json
+65e1dc09206e2dce  experiments/corpus/resumes.json
+8296a20488e12f55  experiments/exp1_structured_output.js
+e5ebc232a3f4ae10  experiments/exp2_score_stability.js
+032f994a9d4cb02f  experiments/exp3_injection.js
+b847cd008212cba4  experiments/exp4_latency_e2e.js
+a3ce55c63a207509  experiments/exp5_sandbox.js
+fffac9490a080c9b  experiments/exp6_wer.js
+406349c119c51e20  experiments/lib/args.js
+407d508bf4858cac  experiments/lib/common.js
+3588bc449ffd3a38  experiments/lib/guard.js
+92344485e20132a0  experiments/lib/models.js
+27be96313077ecaa  experiments/lib/pipeline.js
+b58d9de68c805d0b  experiments/lib/power.js
+8b8b497f2bd1ab3c  experiments/lib/schema.js
+e9ef910267e72b44  experiments/out/exp1_structured_output.json
+cdf050364a213e28  experiments/out/exp2_score_stability.json
+ea51294edb006ec2  experiments/out/exp3_injection.json
+e876ff73f8b5b95d  experiments/out/exp4_latency_e2e.json
+9e9cc3f42c1b3c11  experiments/out/exp5_sandbox.json
+d3e9aa5708e3e839  experiments/probe-capabilities.js
+ada95919033a566f  experiments/run-all.js

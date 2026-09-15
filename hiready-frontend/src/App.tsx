@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { AdminRoute } from "./components/admin/AdminRoute";
 import Index from "./pages/Index";
@@ -16,7 +16,11 @@ import { AuthProvider } from "./context/AuthContext";
 // pdfjs/mammoth, Deepgram) out of the initial bundle entirely.
 const Login = lazy(() => import("./pages/Login"));
 const Signup = lazy(() => import("./pages/Signup"));
-const Dashboard = lazy(() => import("./pages/Dashboard"));
+
+// The two flows.
+const Mastery = lazy(() => import("./pages/Mastery"));
+const Practice = lazy(() => import("./pages/Practice"));
+
 const ResumeAnalysis = lazy(() => import("./pages/ResumeAnalysis"));
 const Interview = lazy(() => import("./pages/Interview"));
 const VoiceInterview = lazy(() => import("./pages/VoiceInterview"));
@@ -57,8 +61,48 @@ const HireDiscover = lazy(() => import("./pages/hire/HireDiscover"));
 // Candidate-side consent
 const Privacy = lazy(() => import("./pages/Privacy"));
 const InviteAccept = lazy(() => import("./pages/InviteAccept"));
+const AdminMastery = lazy(() => import("./pages/admin/AdminMastery"));
 
 const queryClient = new QueryClient();
+
+/** Old path -> new path. Kept for one release so existing links and bookmarks
+ *  keep working, then deleted along with this array. */
+const LEGACY_REDIRECTS: Array<[string, string]> = [
+  ["/dashboard", "/mastery"],
+
+  ["/wrong-answers", "/mastery/review"],
+  ["/aptitude/notebook", "/mastery/review"],
+  ["/aptitude-notebook", "/mastery/review"],
+
+  ["/aptitude", "/practice/aptitude"],
+  ["/aptitude-practice", "/practice/aptitude/practice"],
+  ["/aptitude/practice", "/practice/aptitude/practice"],
+  ["/aptitude-test-page", "/practice/aptitude/test"],
+  ["/aptitude-test", "/practice/aptitude/run"],
+  ["/aptitude/test", "/practice/aptitude/run"],
+  ["/aptitude-result", "/practice/aptitude/result"],
+  ["/aptitude/result", "/practice/aptitude/result"],
+  ["/aptitude-dashboard", "/practice/aptitude/stats"],
+  ["/aptitude/dashboard", "/practice/aptitude/stats"],
+
+  ["/coding", "/practice/coding"],
+  ["/coding-interview", "/practice/coding"],
+
+  ["/interview", "/practice/interview"],
+  ["/voice-interview", "/practice/interview/live"],
+  ["/interview-history", "/practice/interview/history"],
+  ["/interview-report", "/practice/interview/report"],
+
+  ["/assessments", "/practice/assessment"],
+  ["/assessments/take", "/practice/assessment/take"],
+
+  ["/resume-analysis", "/practice/resume"],
+  ["/resume-report", "/practice/resume/report"],
+  ["/my-resumes", "/practice/resume/library"],
+  ["/resume-history", "/practice/resume/library"],
+
+  ["/leaderboard", "/practice/leaderboard"],
+];
 
 const App = () => (
   <ErrorBoundary>
@@ -70,30 +114,50 @@ const App = () => (
           <BrowserRouter>
             <Suspense fallback={<PageLoader />}>
               <Routes>
+              {/* Public */}
               <Route path="/" element={<Index />} />
               <Route path="/login" element={<Login />} />
               <Route path="/signup" element={<Signup />} />
-              {/* Private routes */}
-              <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-              <Route path="/resume-analysis" element={<ProtectedRoute><ResumeAnalysis /></ProtectedRoute>} />
-              <Route path="/resume-report" element={<ProtectedRoute><ResumeReport /></ProtectedRoute>} />
-              <Route path="/interview" element={<ProtectedRoute><Interview /></ProtectedRoute>} />
-              <Route path="/voice-interview" element={<ProtectedRoute><VoiceInterview /></ProtectedRoute>} />
-              <Route path="/interview-report" element={<ProtectedRoute><InterviewReport /></ProtectedRoute>} />
-              <Route path="/interview-history" element={<ProtectedRoute><InterviewHistory /></ProtectedRoute>} />
-              <Route path="/resume-history" element={<ProtectedRoute><ResumeHistory /></ProtectedRoute>} />
-              <Route path="/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
-              <Route path="/wrong-answers" element={<ProtectedRoute><WrongAnswersNotebook /></ProtectedRoute>} />
-              <Route path="/aptitude" element={<ProtectedRoute><AptitudePlayCards /></ProtectedRoute>} />
-              <Route path="/aptitude-dashboard" element={<ProtectedRoute><AptitudeDashboard /></ProtectedRoute>} />
-              <Route path="/aptitude-practice" element={<ProtectedRoute><AptitudePractice /></ProtectedRoute>} />
-              <Route path="/aptitude-test-page" element={<ProtectedRoute><AptitudeTestPage /></ProtectedRoute>} />
-              <Route path="/coding" element={<ProtectedRoute><CodingInterview /></ProtectedRoute>} />
-              <Route path="/coding-interview" element={<ProtectedRoute><CodingInterview /></ProtectedRoute>} />
-              <Route path="/aptitude-test" element={<ProtectedRoute><AptitudeTest /></ProtectedRoute>} />
-              <Route path="/aptitude-result" element={<ProtectedRoute><AptitudeResult /></ProtectedRoute>} />
+
+              {/* ── Mastery — the app chooses the work ── */}
+              <Route path="/mastery" element={<ProtectedRoute><Mastery /></ProtectedRoute>} />
+              <Route path="/mastery/review" element={<ProtectedRoute><WrongAnswersNotebook /></ProtectedRoute>} />
+
+              {/* ── Practice — the student chooses ── */}
+              <Route path="/practice" element={<ProtectedRoute><Practice /></ProtectedRoute>} />
+
+              <Route path="/practice/aptitude" element={<ProtectedRoute><AptitudePlayCards /></ProtectedRoute>} />
+              <Route path="/practice/aptitude/practice" element={<ProtectedRoute><AptitudePractice /></ProtectedRoute>} />
+              <Route path="/practice/aptitude/test" element={<ProtectedRoute><AptitudeTestPage /></ProtectedRoute>} />
+              <Route path="/practice/aptitude/run" element={<ProtectedRoute><AptitudeTest /></ProtectedRoute>} />
+              <Route path="/practice/aptitude/result" element={<ProtectedRoute><AptitudeResult /></ProtectedRoute>} />
+              <Route path="/practice/aptitude/stats" element={<ProtectedRoute><AptitudeDashboard /></ProtectedRoute>} />
+
+              <Route path="/practice/coding" element={<ProtectedRoute><CodingInterview /></ProtectedRoute>} />
+
+              <Route path="/practice/interview" element={<ProtectedRoute><Interview /></ProtectedRoute>} />
+              <Route path="/practice/interview/live" element={<ProtectedRoute><VoiceInterview /></ProtectedRoute>} />
+              <Route path="/practice/interview/history" element={<ProtectedRoute><InterviewHistory /></ProtectedRoute>} />
+              <Route path="/practice/interview/report" element={<ProtectedRoute><InterviewReport /></ProtectedRoute>} />
+
+              <Route path="/practice/assessment" element={<ProtectedRoute><AssessmentLanding /></ProtectedRoute>} />
+              <Route path="/practice/assessment/take" element={<ProtectedRoute><AssessmentPipeline /></ProtectedRoute>} />
+
+              <Route path="/practice/resume" element={<ProtectedRoute><ResumeAnalysis /></ProtectedRoute>} />
+              {/* static "library" outranks the dynamic report route — do not reorder */}
+              <Route path="/practice/resume/library" element={<ProtectedRoute><ResumeHistory /></ProtectedRoute>} />
+              <Route path="/practice/resume/report" element={<ProtectedRoute><ResumeReport /></ProtectedRoute>} />
+
+              <Route path="/practice/leaderboard" element={<ProtectedRoute><Leaderboard /></ProtectedRoute>} />
+
+              {/* ── Legacy paths — one release of grace, then delete ── */}
+              {LEGACY_REDIRECTS.map(([from, to]) => (
+                <Route key={from} path={from} element={<Navigate to={to} replace />} />
+              ))}
+
               {/* Admin routes — role-guarded via backend check */}
               <Route path="/admin" element={<AdminRoute><AdminOverview /></AdminRoute>} />
+              <Route path="/admin/mastery" element={<AdminRoute><AdminMastery /></AdminRoute>} />
               <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
               <Route path="/admin/questions" element={<AdminRoute><AdminQuestions /></AdminRoute>} />
               <Route path="/admin/results" element={<AdminRoute><AdminResults /></AdminRoute>} />
@@ -115,9 +179,7 @@ const App = () => (
               {/* ── Candidate consent ── */}
               <Route path="/privacy" element={<ProtectedRoute><Privacy /></ProtectedRoute>} />
               <Route path="/invite/:token" element={<ProtectedRoute><InviteAccept /></ProtectedRoute>} />
-              {/* Assessment routes */}
-              <Route path="/assessments" element={<ProtectedRoute><AssessmentLanding /></ProtectedRoute>} />
-              <Route path="/assessments/take" element={<ProtectedRoute><AssessmentPipeline /></ProtectedRoute>} />
+
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
               </Routes>

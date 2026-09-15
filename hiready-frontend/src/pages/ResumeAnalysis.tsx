@@ -124,7 +124,7 @@ const ResumeAnalysis = () => {
       });
 
       toast.success("Resume analyzed successfully!");
-      navigate("/resume-report");
+      navigate("/practice/resume/report");
     } catch (error) {
       console.error("Error analyzing resume:", error);
       if (error instanceof ScannedResumeError) {

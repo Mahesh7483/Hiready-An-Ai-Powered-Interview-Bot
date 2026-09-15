@@ -38,6 +38,33 @@ const testResultSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  attemptId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'AptitudeAttempt',
+    unique: true,
+    sparse: true,
+    index: true
+  },
+  percentage: {
+    type: Number
+  },
+  markingMode: {
+    type: String,
+    enum: ['standard', 'negative_0.25'],
+    default: 'standard'
+  },
+  keyVersion: {
+    type: Number,
+    default: 1
+  },
+  serverGradedAt: {
+    type: Date,
+    default: Date.now
+  },
+  audit: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {}
+  },
   preset: {
     type: String,
     default: '',

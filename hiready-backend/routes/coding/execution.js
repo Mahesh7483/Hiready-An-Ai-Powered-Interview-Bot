@@ -19,7 +19,7 @@ const DIFF_ORDER = DIFFICULTY_ORDER;
 // Stricter limiter for heavy execution endpoints
 const execLimiter = rateLimit({
   windowMs: 60 * 1000,
-  limit: 30,
+  limit: 120,
   standardHeaders: true,
   legacyHeaders: false,
   message: { error: 'Too many execution requests, slow down' },

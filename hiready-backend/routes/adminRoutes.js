@@ -1063,4 +1063,275 @@ router.get('/disclosure/export.csv', async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+//  Mastery - cohort view of the four readiness pillars.
+//
+//  Mirrors routes/readinessRoutes.js exactly: same pillar definitions, same
+//  40/30/20/10 weights, same renormalisation when a pillar has no data. The
+//  difference is that this scores every student and then reports the cohort,
+//  so an admin number and a student number can never disagree.
+// ---------------------------------------------------------------------------
+
+const PILLAR_WEIGHTS = { interview: 40, aptitude: 30, coding: 20, resume: 10 };
+
+/**
+ * Ids of users that still exist.
+ *
+ * Attempts outlive the accounts that made them — deleting a user leaves their
+ * TestResult and CodingSubmission rows behind. Counting those orphans against
+ * the cohort produces impossible figures like "7 of 5 students scored", so
+ * every cohort aggregate below is filtered through this set.
+ */
+async function existingUserIds() {
+  const ids = await User.distinct('_id');
+  return new Set(ids.map(String));
+}
+
+/**
+ * A $in matcher for "owned by a user that still exists".
+ *
+ * userId is declared as an ObjectId on the schema but the collection actually
+ * holds BOTH ObjectIds and plain strings, so an ObjectId-only $in silently
+ * matches nothing for the string rows. Both shapes are listed deliberately —
+ * do not "simplify" this to one of them.
+ */
+function liveUserMatch(live) {
+  const ids = [...live];
+  return {
+    $in: [
+      ...ids.filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose.Types.ObjectId(id)),
+      ...ids
+    ]
+  };
+}
+
+/** Per-student pillar scores, keyed by user id. Orphaned ids are dropped. */
+async function scoreEveryStudent() {
+  const [aptitude, interview, coding, resume] = await Promise.all([
+    // Aptitude: accuracy over every graded answer
+    TestResult.aggregate([
+      { $unwind: '$selectedAnswers' },
+      { $match: { 'selectedAnswers.selected': { $nin: ['', null] } } },
+      { $group: {
+        _id: '$userId',
+        answered: { $sum: 1 },
+        correct: { $sum: { $cond: ['$selectedAnswers.isCorrect', 1, 0] } }
+      } },
+      { $project: { score: { $multiply: [{ $divide: ['$correct', '$answered'] }, 100] }, answered: 1 } }
+    ]),
+
+    // Interview: mean of the AI analysis overall score
+    InterviewSession.aggregate([
+      { $match: { analysisJson: { $ne: null } } },
+      { $group: { _id: '$user', score: { $avg: '$analysisJson.overallScore' } } }
+    ]),
+
+    // Coding: pass rate over the latest submission per attempted question
+    CodingSubmission.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: { u: '$userId', q: '$questionId' }, status: { $first: '$status' } } },
+      { $group: {
+        _id: '$_id.u',
+        attempted: { $sum: 1 },
+        accepted: { $sum: { $cond: [{ $eq: ['$status', 'accepted'] }, 1, 0] } }
+      } },
+      { $project: { score: { $multiply: [{ $divide: ['$accepted', '$attempted'] }, 100] } } }
+    ]),
+
+    // Resume: most recent analysis
+    ResumeAnalysis.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$user', score: { $first: '$overallScore' } } }
+    ])
+  ]);
+
+  const live = await existingUserIds();
+  const byUser = new Map();
+  const put = (rows, key) => rows.forEach((r) => {
+    if (!r._id || !Number.isFinite(r.score)) return;
+    const id = String(r._id);
+    if (!live.has(id)) return; // attempt from a deleted account
+    if (!byUser.has(id)) byUser.set(id, {});
+    byUser.get(id)[key] = Math.round(r.score);
+  });
+  put(aptitude, 'aptitude');
+  put(interview, 'interview');
+  put(coding, 'coding');
+  put(resume, 'resume');
+  return byUser;
+}
+
+/** The same renormalising composite the student sees on /mastery. */
+function compositeScore(pillars) {
+  const present = Object.entries(PILLAR_WEIGHTS).filter(([k]) => pillars[k] != null);
+  const totalWeight = present.reduce((sum, [, w]) => sum + w, 0);
+  if (!totalWeight) return null;
+  return Math.round(present.reduce((sum, [k, w]) => sum + pillars[k] * w, 0) / totalWeight);
+}
+
+// GET /api/admin/readiness - cohort readiness across all four pillars
+router.get('/readiness', async (req, res) => {
+  try {
+    const byUser = await scoreEveryStudent();
+    const totalStudents = await User.countDocuments();
+
+    const pillars = {};
+    for (const key of Object.keys(PILLAR_WEIGHTS)) {
+      const scores = [...byUser.values()].map((p) => p[key]).filter((s) => s != null);
+      pillars[key] = {
+        weight: PILLAR_WEIGHTS[key],
+        students: scores.length,
+        average: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null
+      };
+    }
+
+    // Distribution of the composite, so an admin sees the shape of the cohort
+    // rather than only its mean.
+    const bands = [
+      { label: '0-39', min: 0, max: 39, students: 0 },
+      { label: '40-59', min: 40, max: 59, students: 0 },
+      { label: '60-74', min: 60, max: 74, students: 0 },
+      { label: '75-100', min: 75, max: 100, students: 0 }
+    ];
+    const composites = [];
+    byUser.forEach((p) => {
+      const c = compositeScore(p);
+      if (c == null) return;
+      composites.push(c);
+      const band = bands.find((b) => c >= b.min && c <= b.max);
+      if (band) band.students++;
+    });
+
+    res.json({
+      totalStudents,
+      scoredStudents: composites.length,
+      unscoredStudents: Math.max(totalStudents - composites.length, 0),
+      average: composites.length
+        ? Math.round(composites.reduce((a, b) => a + b, 0) / composites.length)
+        : null,
+      pillars,
+      bands
+    });
+  } catch (err) {
+    console.error('Admin readiness error:', err.message);
+    res.status(500).json({ error: 'Failed to compute cohort readiness' });
+  }
+});
+
+// GET /api/admin/weak-topics - topics the whole cohort struggles with.
+// Same computation as /api/questions/weak-topics/me but across every student,
+// and without the sub-60% filter so strong topics are visible too.
+router.get('/weak-topics', async (req, res) => {
+  try {
+    const live = await existingUserIds();
+    const topics = await TestResult.aggregate([
+      { $match: { userId: liveUserMatch(live) } },
+      { $unwind: '$selectedAnswers' },
+      { $match: { 'selectedAnswers.selected': { $nin: ['', null] } } },
+      { $group: {
+        _id: { $ifNull: ['$topic', 'logical'] },
+        answered: { $sum: 1 },
+        correct: { $sum: { $cond: ['$selectedAnswers.isCorrect', 1, 0] } },
+        students: { $addToSet: '$userId' }
+      } },
+      { $project: {
+        _id: 0,
+        topic: '$_id',
+        answered: 1,
+        correct: 1,
+        students: { $size: '$students' },
+        accuracy: { $round: [{ $multiply: [{ $divide: ['$correct', '$answered'] }, 100] }, 0] }
+      } },
+      { $sort: { accuracy: 1 } }
+    ]);
+    res.json({ topics });
+  } catch (err) {
+    console.error('Admin weak topics error:', err.message);
+    res.status(500).json({ error: 'Failed to load cohort topics' });
+  }
+});
+
+// GET /api/admin/engagement - who is actually practising.
+//
+// NOTE: there is no session or review-queue model yet, so this reports real
+// practice activity rather than inventing session completion. Wire the session
+// and ReviewItem counts in here once those land.
+router.get('/engagement', async (req, res) => {
+  try {
+    const now = Date.now();
+    const since = (days) => new Date(now - days * 864e5);
+    const live = await existingUserIds();
+
+    const activeIn = async (days) => {
+      const [tests, interviews, code] = await Promise.all([
+        TestResult.distinct('userId', { createdAt: { $gte: since(days) } }),
+        InterviewSession.distinct('user', { createdAt: { $gte: since(days) } }),
+        CodingSubmission.distinct('userId', { createdAt: { $gte: since(days) } })
+      ]);
+      const ids = [...tests, ...interviews, ...code].map(String).filter((id) => live.has(id));
+      return new Set(ids).size;
+    };
+
+    const [activeToday, active7d, active30d] = await Promise.all([
+      activeIn(1), activeIn(7), activeIn(30)
+    ]);
+    const totalStudents = live.size;
+
+    // Daily attempts over the last 14 days, matching the Overview chart window
+    const daily = await TestResult.aggregate([
+      { $match: { createdAt: { $gte: since(14) } } },
+      { $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        attempts: { $sum: 1 },
+        students: { $addToSet: '$userId' }
+      } },
+      { $project: { _id: 0, date: '$_id', attempts: 1, students: { $size: '$students' } } },
+      { $sort: { date: 1 } }
+    ]);
+
+    // Busiest students over the last 30 days (existing accounts only)
+    const rows = await TestResult.aggregate([
+      { $match: {
+        createdAt: { $gte: since(30) },
+        userId: liveUserMatch(live)
+      } },
+      { $group: {
+        _id: '$userId',
+        attempts: { $sum: 1 },
+        days: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } } },
+        lastActive: { $max: '$createdAt' }
+      } },
+      { $project: { attempts: 1, lastActive: 1, activeDays: { $size: '$days' } } },
+      { $sort: { activeDays: -1, attempts: -1 } },
+      { $limit: 10 }
+    ]);
+    const users = await User.find({ _id: { $in: rows.map((r) => r._id) } })
+      .select('name email').lean();
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+    res.json({
+      totalStudents,
+      activeToday,
+      active7d,
+      active30d,
+      daily,
+      mostActive: rows.map((r) => {
+        const u = userMap.get(String(r._id)) || {};
+        return {
+          userId: r._id,
+          name: u.name || null,
+          email: u.email || null,
+          attempts: r.attempts,
+          activeDays: r.activeDays,
+          lastActive: r.lastActive
+        };
+      })
+    });
+  } catch (err) {
+    console.error('Admin engagement error:', err.message);
+    res.status(500).json({ error: 'Failed to load engagement' });
+  }
+});
+
 module.exports = router;

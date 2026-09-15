@@ -1,0 +1,170 @@
+{
+  "_meta": {
+    "description": "20 synthetic resumes authored for the HiReady evaluation. No real person's data is used. Four role families x five experience/quality profiles. Each item carries the target role and experience level that the analyser is asked to score against, so that scoring is conditioned identically across repeated runs.",
+    "license": "CC BY 4.0 - free to redistribute with the paper's artifact package",
+    "roleFamilies": ["backend", "frontend", "data-ml", "devops-qa"],
+    "profiles": ["fresher-weak", "fresher-strong", "mid-weak", "mid-strong", "senior-strong"]
+  },
+  "resumes": [
+    {
+      "id": "R01",
+      "family": "backend",
+      "profile": "fresher-weak",
+      "targetRole": "Backend Developer",
+      "experienceLevel": "entry",
+      "text": "Arun Kalyan\narun.kalyan@example.com | Bengaluru\n\nOBJECTIVE\nLooking for a good job in software field where I can use my skills and grow with the company.\n\nEDUCATION\nB.E. Computer Science, 2025. CGPA 7.1.\n\nSKILLS\nC, Java, HTML, CSS, MySQL, MS Office, Communication skills, Team player.\n\nPROJECTS\nLibrary Management System - Made a system for managing library books using Java and MySQL. Responsible for the database part.\nCollege Website - Worked on a website for our department using HTML and CSS.\n\nEXTRA CURRICULAR\nMember of coding club. Attended workshop on cloud computing.\n\nDECLARATION\nI hereby declare that the above information is true to the best of my knowledge."
+    },
+    {
+      "id": "R02",
+      "family": "backend",
+      "profile": "fresher-strong",
+      "targetRole": "Backend Developer",
+      "experienceLevel": "entry",
+      "text": "Nithya Raghavan\nnithya.r@example.com | github.com/nithyar | linkedin.com/in/nithyar | Chennai\n\nSUMMARY\nFinal-year CS student with two shipped backend projects and an internship building REST services. Comfortable with Node.js, PostgreSQL, and containerised deployment.\n\nEDUCATION\nB.Tech Computer Science and Engineering, 2025. CGPA 8.9/10.\n\nSKILLS\nLanguages: Python, JavaScript, SQL, Go (basic)\nBackend: Node.js, Express, FastAPI, REST, JWT auth\nData: PostgreSQL, Redis, MongoDB\nTools: Docker, Git, GitHub Actions, Postman, pytest\n\nEXPERIENCE\nBackend Intern, Trilo Systems (Jun 2024 - Aug 2024)\n- Built 11 REST endpoints for an inventory service used by 3 internal teams.\n- Cut p95 order-lookup latency from 820 ms to 190 ms by adding a composite index and a Redis read-through cache.\n- Added 46 pytest cases, raising service coverage from 31% to 74%.\n\nPROJECTS\nSplitwise-style expense API - Node/Express/PostgreSQL, settles balances with a debt-simplification algorithm; 92% test coverage; deployed on Render.\nRate-limited URL shortener - Go and Redis, token-bucket limiter, 4k req/s on a single core in local load tests.\n\nACHIEVEMENTS\nSmart India Hackathon finalist 2024. 3-star on CodeChef."
+    },
+    {
+      "id": "R03",
+      "family": "backend",
+      "profile": "mid-weak",
+      "targetRole": "Senior Backend Engineer",
+      "experienceLevel": "mid",
+      "text": "Sandeep Menon\nsandeep.menon@example.com | Kochi\n\nPROFESSIONAL SUMMARY\nSoftware engineer with 4 years of experience in software development lifecycle. Hardworking and dedicated professional.\n\nWORK EXPERIENCE\nSoftware Engineer, Vantage IT Services (2021 - Present)\n- Responsible for developing and maintaining applications.\n- Worked on bug fixes and enhancements.\n- Helped with code reviews and documentation.\n- Involved in daily standup meetings and sprint planning.\n\nSoftware Trainee, Vantage IT Services (2021)\n- Worked on learning company frameworks.\n\nSKILLS\nJava, Spring Boot, Hibernate, Oracle, Jenkins, Agile, JIRA.\n\nEDUCATION\nMCA, 2021.\n\nCERTIFICATIONS\nOracle Certified Associate Java Programmer."
+    },
+    {
+      "id": "R04",
+      "family": "backend",
+      "profile": "mid-strong",
+      "targetRole": "Senior Backend Engineer",
+      "experienceLevel": "mid",
+      "text": "Priyanka Deshpande\npriyanka.d@example.com | linkedin.com/in/pdeshpande | github.com/pdesh | Pune\n\nSUMMARY\nBackend engineer, 5 years, focused on high-throughput payment and ledger services in Java and Go.\n\nEXPERIENCE\nSenior Software Engineer, Finlayer (Mar 2023 - Present)\n- Led the migration of a monolithic settlement service to 4 Go microservices, reducing median settlement latency from 3.1 s to 640 ms.\n- Designed an idempotent ledger write path that eliminated 100% of duplicate-posting incidents (previously 6-9 per month).\n- Introduced contract testing with Pact across 7 services; integration defects found in staging fell 58% year over year.\n- Mentors 3 engineers; owns the on-call runbook for the payments domain.\n\nSoftware Engineer, Rezolve Technologies (Jul 2020 - Feb 2023)\n- Built an event-driven reconciliation pipeline (Kafka, Java 17, Postgres) processing 2.4 M transactions per day.\n- Cut cloud spend 22% by right-sizing consumer groups and moving cold ledger data to object storage.\n\nSKILLS\nJava 17, Go, Spring Boot, Kafka, PostgreSQL, Redis, gRPC, Kubernetes, Terraform, Prometheus, Grafana, OpenTelemetry\n\nEDUCATION\nB.E. Information Science, 2020. CGPA 8.4.\n\nCERTIFICATIONS\nCKA (Certified Kubernetes Administrator), 2023."
+    },
+    {
+      "id": "R05",
+      "family": "backend",
+      "profile": "senior-strong",
+      "targetRole": "Staff Backend Engineer",
+      "experienceLevel": "senior",
+      "text": "Rahul Iyer\nrahul.iyer@example.com | +91-XXXXXXXXXX | linkedin.com/in/rahuliyer | Hyderabad\n\nSUMMARY\nStaff-level backend engineer with 9 years building distributed storage and API platforms. Owns architecture for systems serving 40 M monthly active users.\n\nEXPERIENCE\nStaff Engineer, Northwind Cloud (Jan 2022 - Present)\n- Architected a multi-region metadata store (Go, FoundationDB) sustaining 180 k ops/s at p99 < 25 ms across 3 regions.\n- Drove an API deprecation programme retiring 14 legacy endpoints without a customer-facing incident.\n- Authored the org-wide backward-compatibility RFC now used by 60+ engineers.\n\nSenior Engineer, Helix Analytics (2018 - 2021)\n- Rebuilt the ingestion tier (Java, Kafka, Flink) taking sustained throughput from 90 k to 720 k events/s.\n- Reduced storage cost per event 41% via columnar re-encoding and tiered retention.\n\nEngineer, Cognate Labs (2016 - 2018)\n- Built the billing microservice and its reconciliation jobs; zero revenue-impacting defects in 2 years.\n\nSKILLS\nGo, Java, Rust (working), distributed systems, consensus protocols, Kafka, Flink, Kubernetes, AWS, observability, capacity planning\n\nEDUCATION\nM.Tech Computer Science, 2016. B.E. Computer Science, 2014.\n\nPUBLICATIONS\nCo-author, 'Tiered retention for high-cardinality event stores', industry track workshop, 2023."
+    },
+    {
+      "id": "R06",
+      "family": "frontend",
+      "profile": "fresher-weak",
+      "targetRole": "Frontend Developer",
+      "experienceLevel": "entry",
+      "text": "Divya Suresh\ndivya.s@example.com | Mysuru\n\nCAREER OBJECTIVE\nTo secure a challenging position in a reputed organization to expand my learnings, knowledge and skills.\n\nEDUCATION\nBCA, 2025, 71%.\n\nTECHNICAL SKILLS\nHTML, CSS, Bootstrap, JavaScript basics, Photoshop, Canva.\n\nPROJECTS\nPortfolio Website - Created my own portfolio website.\nE-commerce page design - Designed a shopping page layout.\n\nSTRENGTHS\nQuick learner, Positive attitude, Hard working, Good communication.\n\nHOBBIES\nReading, Music, Drawing.\n\nPERSONAL DETAILS\nDate of Birth: 12/04/2003. Languages known: English, Kannada, Hindi. Marital status: Single."
+    },
+    {
+      "id": "R07",
+      "family": "frontend",
+      "profile": "fresher-strong",
+      "targetRole": "Frontend Developer",
+      "experienceLevel": "entry",
+      "text": "Karthik Balaji\nkarthik.b@example.com | github.com/kbalaji | kbalaji.dev | Coimbatore\n\nSUMMARY\nFrontend-focused developer graduating 2025. Shipped two production React apps used by a campus community of 4,000 students. Cares about accessibility and bundle size.\n\nEDUCATION\nB.E. Computer Science, 2025. CGPA 8.6.\n\nSKILLS\nReact 18, TypeScript, Next.js, Tailwind, Vite, Zustand, React Query, Playwright, Vitest, Figma, WCAG 2.1 AA\n\nEXPERIENCE\nFrontend Intern, Blueframe Studio (May 2024 - Jul 2024)\n- Rebuilt a marketing site in Next.js; Lighthouse performance rose from 54 to 96 and LCP fell from 4.2 s to 1.3 s.\n- Fixed 23 axe-reported accessibility violations, taking the site to zero critical issues.\n\nPROJECTS\nCampus Exchange - React + TypeScript marketplace, 4,000 registered users, 61 Playwright end-to-end tests, code-split to a 118 kB initial bundle.\nOffline-first notes PWA - IndexedDB sync with conflict resolution; works fully offline; 99 Lighthouse PWA score.\n\nOPEN SOURCE\n7 merged PRs to a popular headless UI library, including a focus-trap fix affecting all dialog users."
+    },
+    {
+      "id": "R08",
+      "family": "frontend",
+      "profile": "mid-weak",
+      "targetRole": "Senior Frontend Engineer",
+      "experienceLevel": "mid",
+      "text": "Mohammed Faizan\nfaizan.m@example.com | Bengaluru\n\nSUMMARY\nUI developer having 4+ years of experience in web technologies. Team player with good analytical skills.\n\nEXPERIENCE\nUI Developer, Sterling Softtech (2021 - Present)\n- Worked on developing user interfaces as per the design.\n- Responsible for fixing UI bugs raised by the QA team.\n- Helped in migration of some pages from jQuery to React.\n- Coordinated with backend team for API integration.\n\nEDUCATION\nB.Sc. Computer Science, 2020.\n\nSKILLS\nHTML5, CSS3, JavaScript, jQuery, React, Redux, Bootstrap, Git, Agile methodology.\n\nOTHER\nReceived 'Star Performer' award in Q3 2022."
+    },
+    {
+      "id": "R09",
+      "family": "frontend",
+      "profile": "mid-strong",
+      "targetRole": "Senior Frontend Engineer",
+      "experienceLevel": "mid",
+      "text": "Ananya Bose\nananya.bose@example.com | linkedin.com/in/ananyabose | Kolkata\n\nSUMMARY\nSenior frontend engineer, 6 years, specialising in large React codebases, design systems, and web performance.\n\nEXPERIENCE\nSenior Frontend Engineer, Lumen Health (Aug 2022 - Present)\n- Owns a 240-component design system consumed by 5 product teams; adoption reached 88% of screens in 14 months.\n- Cut median Time to Interactive from 5.4 s to 1.9 s through route-level code splitting, image policy, and removing 3 heavy dependencies.\n- Introduced visual regression testing (Playwright + Chromatic) catching 40+ layout regressions before release.\n- Raised accessibility conformance from 61% to 97% of audited screens at WCAG 2.1 AA.\n\nFrontend Engineer, Kettle Commerce (2019 - 2022)\n- Built the checkout funnel; A/B test showed a 3.4% lift in completed checkouts (n = 61,000 sessions).\n- Migrated 180 class components to hooks with zero production incidents.\n\nSKILLS\nReact, TypeScript, Next.js, Redux Toolkit, GraphQL, Storybook, Playwright, Webpack/Vite, Core Web Vitals, accessibility auditing\n\nEDUCATION\nB.Tech Information Technology, 2019."
+    },
+    {
+      "id": "R10",
+      "family": "frontend",
+      "profile": "senior-strong",
+      "targetRole": "Principal Frontend Engineer",
+      "experienceLevel": "senior",
+      "text": "Vikram Rathore\nvikram.rathore@example.com | linkedin.com/in/vrathore | github.com/vrathore | Gurugram\n\nSUMMARY\nPrincipal engineer, 10 years in web platform work. Leads frontend architecture for a product suite with 12 M monthly users.\n\nEXPERIENCE\nPrincipal Frontend Engineer, Arcline (2021 - Present)\n- Defined the micro-frontend architecture now used by 9 teams; independent deploys took release lead time from 11 days to under 1 day.\n- Built the performance budget enforcement pipeline; regressions blocked at CI, keeping p75 LCP under 2.5 s for 8 consecutive quarters.\n- Led a TypeScript strict-mode migration across 480 k lines, retiring 3,100 any-types.\n\nStaff Engineer, Northgate Media (2018 - 2021)\n- Rewrote the video player shell; startup time fell 46%, rebuffering ratio fell 0.8 pp.\n- Chaired the accessibility guild; the flagship app reached VPAT-documented WCAG 2.1 AA.\n\nSenior Engineer, Wexler Apps (2015 - 2018)\n\nSKILLS\nTypeScript, React, module federation, build systems, rendering performance, streaming SSR, browser APIs, WebAssembly (working), accessibility, technical leadership\n\nEDUCATION\nB.Tech Computer Science, 2015.\n\nTALKS\nSpeaker, 'Performance budgets that teams actually keep', regional web conference, 2024."
+    },
+    {
+      "id": "R11",
+      "family": "data-ml",
+      "profile": "fresher-weak",
+      "targetRole": "Data Analyst",
+      "experienceLevel": "entry",
+      "text": "Sneha Patil\nsneha.patil@example.com | Nashik\n\nOBJECTIVE\nSeeking an entry level position in data science domain to utilize my knowledge.\n\nEDUCATION\nB.Sc. Statistics, 2025, 68%.\n\nSKILLS\nPython, Excel, Power BI, Machine Learning, Deep Learning, Artificial Intelligence, NLP, Data Science, Big Data, Tableau, SQL, R, Java, C++, Cloud, DevOps.\n\nPROJECTS\nTitanic Survival Prediction - Used machine learning to predict survival. Got good accuracy.\nIris Flower Classification - Classified flowers using ML algorithms.\nHouse Price Prediction - Predicted house prices.\n\nCERTIFICATIONS\nData Science course from online platform. Python certification.\n\nDECLARATION\nAll the details furnished above are true."
+    },
+    {
+      "id": "R12",
+      "family": "data-ml",
+      "profile": "fresher-strong",
+      "targetRole": "Machine Learning Engineer",
+      "experienceLevel": "entry",
+      "text": "Aditya Verma\naditya.verma@example.com | github.com/adityav | Bengaluru\n\nSUMMARY\nM.Tech student in machine learning with a published workshop paper and an ML internship. Focus on efficient inference and evaluation.\n\nEDUCATION\nM.Tech Artificial Intelligence, 2025, CGPA 9.1. B.E. Computer Science, 2023, CGPA 8.7.\n\nSKILLS\nPython, PyTorch, scikit-learn, Hugging Face Transformers, ONNX Runtime, pandas, NumPy, MLflow, Docker, SQL, FastAPI\n\nEXPERIENCE\nML Intern, Vertex AI Labs (Jan 2025 - Jun 2025)\n- Distilled a 1.3 B parameter classifier to 340 M with 1.8 point macro-F1 loss, cutting inference cost per 1 k requests by 62%.\n- Built an evaluation harness with stratified bootstrap confidence intervals now used by 4 model owners.\n\nPROJECTS\nCode-mixed sentiment classifier - Hindi-English corpus of 42 k posts; macro-F1 0.79 versus a 0.71 mBERT baseline; ablations on tokenisation.\nRetrieval evaluation toolkit - Open-source, 190 GitHub stars, implements nDCG, MRR, and paired significance testing.\n\nPUBLICATIONS\nA. Verma et al., 'Tokenisation effects in code-mixed sentiment classification', workshop, 2025."
+    },
+    {
+      "id": "R13",
+      "family": "data-ml",
+      "profile": "mid-weak",
+      "targetRole": "Senior Data Scientist",
+      "experienceLevel": "mid",
+      "text": "Ravi Shankar\nravi.shankar@example.com | Chennai\n\nPROFILE\nData scientist with 5 years experience in analytics and machine learning. Passionate about data.\n\nEXPERIENCE\nData Scientist, Meridian Analytics (2020 - Present)\n- Worked on various machine learning models for the business.\n- Responsible for creating dashboards and reports for stakeholders.\n- Involved in data cleaning and preprocessing activities.\n- Helped the team with model deployment.\n\nSKILLS\nPython, R, SQL, Machine Learning, Tableau, Power BI, Statistics, Excel.\n\nEDUCATION\nM.Sc. Statistics, 2020.\n\nCERTIFICATIONS\nMultiple online certifications in data science and machine learning."
+    },
+    {
+      "id": "R14",
+      "family": "data-ml",
+      "profile": "mid-strong",
+      "targetRole": "Senior Machine Learning Engineer",
+      "experienceLevel": "mid",
+      "text": "Meera Krishnan\nmeera.k@example.com | linkedin.com/in/meerakrishnan | Bengaluru\n\nSUMMARY\nML engineer, 6 years, shipping ranking and forecasting models into production and owning their evaluation.\n\nEXPERIENCE\nSenior ML Engineer, Orbit Retail (2022 - Present)\n- Rebuilt the search ranker (LightGBM to a two-tower neural retriever); online A/B over 2.1 M sessions showed +6.2% add-to-cart, p < 0.01.\n- Built the feature store and backfill tooling; new-feature time-to-production fell from 3 weeks to 2 days.\n- Introduced offline-online metric parity checks that caught 4 training-serving skew bugs before launch.\n\nML Engineer, Sable Logistics (2019 - 2022)\n- Demand forecasting for 1,800 SKUs; MAPE improved from 24.1% to 15.6%, cutting stockouts 19%.\n- Automated weekly retraining with drift-triggered rollback; on-call pages for model issues dropped from 5/month to under 1.\n\nSKILLS\nPython, PyTorch, LightGBM, Spark, Airflow, Feast, MLflow, Kubernetes, A/B testing, causal inference, monitoring and drift detection\n\nEDUCATION\nM.Tech Computer Science, 2019."
+    },
+    {
+      "id": "R15",
+      "family": "data-ml",
+      "profile": "senior-strong",
+      "targetRole": "Principal Machine Learning Scientist",
+      "experienceLevel": "senior",
+      "text": "Sanjana Rao\nsanjana.rao@example.com | linkedin.com/in/sanjanarao | Hyderabad\n\nSUMMARY\nPrincipal ML scientist, 11 years across recommendation, NLP, and responsible-AI evaluation. 9 peer-reviewed publications, 3 granted patents.\n\nEXPERIENCE\nPrincipal ML Scientist, Halcyon AI (2021 - Present)\n- Leads a 12-person applied science group owning the recommendation stack for 30 M users.\n- Shipped a sequence recommender that raised 30-day retention 4.1 pp in a geo-randomised trial covering 6 markets.\n- Established the model-risk review process now mandatory for every launch; 100% of shipped models carry a documented fairness assessment.\n\nSenior Scientist, Cirrus Research (2016 - 2021)\n- First-authored 5 papers on debiased evaluation of implicit-feedback recommenders.\n- Built the counterfactual evaluation library adopted by 3 business units.\n\nScientist, Ardent Labs (2014 - 2016)\n\nSKILLS\nRecommender systems, causal and counterfactual evaluation, LLM evaluation, PyTorch, JAX, distributed training, fairness auditing, research leadership\n\nEDUCATION\nPh.D. Computer Science, 2014. B.Tech Computer Science, 2009.\n\nSELECTED PUBLICATIONS\n9 papers at top-tier venues; 1,400+ citations. Patents: 3 granted in ranking and personalisation."
+    },
+    {
+      "id": "R16",
+      "family": "devops-qa",
+      "profile": "fresher-weak",
+      "targetRole": "QA Engineer",
+      "experienceLevel": "entry",
+      "text": "Harish Kumar\nharish.k@example.com | Salem\n\nOBJECTIVE\nTo work in a challenging environment where I can improve my skills and contribute to organization growth.\n\nEDUCATION\nB.E. Mechanical Engineering, 2024, 66%.\n\nSKILLS\nManual Testing, Selenium (basic), Java (basic), MS Excel, Communication.\n\nTRAINING\nCompleted 3 months software testing course from a training institute.\n\nPROJECTS\nTesting of an e-commerce website - Wrote test cases and executed them manually.\n\nSTRENGTHS\nSelf motivated, Punctual, Adaptable.\n\nPERSONAL DETAILS\nFather's name, Date of birth, Nationality: Indian, Languages: Tamil, English."
+    },
+    {
+      "id": "R17",
+      "family": "devops-qa",
+      "profile": "fresher-strong",
+      "targetRole": "SDET",
+      "experienceLevel": "entry",
+      "text": "Fatima Sheikh\nfatima.sheikh@example.com | github.com/fsheikh | Hyderabad\n\nSUMMARY\nGraduating engineer focused on test automation and CI reliability. Built and maintained a test suite for a live student platform.\n\nEDUCATION\nB.Tech Computer Science, 2025, CGPA 8.5.\n\nSKILLS\nPython, Java, pytest, Playwright, Selenium WebDriver, REST Assured, GitHub Actions, Docker, k6, Allure reporting\n\nEXPERIENCE\nQA Automation Intern, Novus Labs (Jun 2024 - Dec 2024)\n- Converted 140 manual regression cases to Playwright; regression cycle time fell from 2 days to 35 minutes.\n- Cut CI flakiness from 12% to 2.4% of runs by isolating shared test state and adding deterministic waits.\n- Added contract tests for 9 API endpoints, catching 6 breaking changes pre-merge.\n\nPROJECTS\nFlake detector - Analyses CI history to rank flaky tests by instability score; used on a 900-test suite.\nLoad-test harness - k6 scenarios for a 3-service stack; documented the throughput knee at 340 rps."
+    },
+    {
+      "id": "R18",
+      "family": "devops-qa",
+      "profile": "mid-weak",
+      "targetRole": "DevOps Engineer",
+      "experienceLevel": "mid",
+      "text": "Naveen Gupta\nnaveen.g@example.com | Noida\n\nSUMMARY\nDevOps engineer with around 4 years of experience. Good knowledge of cloud and automation tools.\n\nEXPERIENCE\nDevOps Engineer, Arcadia Infotech (2021 - Present)\n- Responsible for maintaining the CI/CD pipelines.\n- Worked on deployment activities in AWS.\n- Helped with monitoring and alerting setup.\n- Involved in production support on rotation basis.\n\nSKILLS\nAWS, Jenkins, Docker, Kubernetes, Terraform, Ansible, Linux, Shell scripting, Git.\n\nEDUCATION\nB.Tech Electronics and Communication, 2020.\n\nCERTIFICATIONS\nAWS Certified Solutions Architect Associate."
+    },
+    {
+      "id": "R19",
+      "family": "devops-qa",
+      "profile": "mid-strong",
+      "targetRole": "Senior Site Reliability Engineer",
+      "experienceLevel": "mid",
+      "text": "Joseph Mathew\njoseph.mathew@example.com | linkedin.com/in/josephmathew | Kochi\n\nSUMMARY\nSRE, 6 years, owning availability and cost for platforms serving 8 M users.\n\nEXPERIENCE\nSenior SRE, Quanta Cloud (2022 - Present)\n- Raised platform availability from 99.62% to 99.97% over 5 quarters by eliminating 3 single points of failure and adding regional failover.\n- Cut mean time to recovery from 74 minutes to 19 minutes through runbook automation and better alert routing.\n- Reduced infrastructure spend 27% ($430 k annualised) via right-sizing, spot adoption, and storage tiering.\n- Runs the incident review programme; 100% of Sev1/Sev2 incidents now have published postmortems.\n\nSRE, Bracket Systems (2019 - 2022)\n- Migrated 46 services to Kubernetes with zero-downtime cutovers.\n- Built the SLO framework covering 30 services; alert volume fell 61% while detection coverage rose.\n\nSKILLS\nKubernetes, Terraform, AWS, GCP, Prometheus, Grafana, OpenTelemetry, Go, Python, incident command, SLO design, chaos testing\n\nEDUCATION\nB.Tech Computer Science, 2019.\n\nCERTIFICATIONS\nCKA, CKS, AWS Solutions Architect Professional."
+    },
+    {
+      "id": "R20",
+      "family": "devops-qa",
+      "profile": "senior-strong",
+      "targetRole": "Principal Platform Engineer",
+      "experienceLevel": "senior",
+      "text": "Lakshmi Narayanan\nlakshmi.n@example.com | linkedin.com/in/lakshmin | Bengaluru\n\nSUMMARY\nPrincipal platform engineer, 12 years. Builds the internal developer platform for a 400-engineer organisation.\n\nEXPERIENCE\nPrincipal Platform Engineer, Vireo Technologies (2020 - Present)\n- Built the internal developer platform (Backstage, Terraform modules, golden paths); service bootstrap time fell from 3 weeks to 2 hours.\n- Led the multi-cluster Kubernetes strategy across 4 regions; failed-deploy rate fell from 8.1% to 1.2%.\n- Drove supply-chain hardening (SLSA level 3, signed artefacts, SBOM in CI) across 260 repositories.\n- Cut annual cloud spend $2.1 M through commitment planning and a chargeback model that made team-level cost visible.\n\nStaff Infrastructure Engineer, Ridgeline Corp (2016 - 2020)\n- Designed the zero-downtime database migration tooling used for 90+ production migrations.\n\nInfrastructure Engineer, Tessera Networks (2013 - 2016)\n\nSKILLS\nPlatform engineering, Kubernetes, Terraform, Go, supply-chain security, multi-region architecture, FinOps, developer experience, technical strategy\n\nEDUCATION\nM.S. Computer Science, 2013. B.E. Computer Science, 2011.\n\nTALKS\nSpeaker on internal developer platforms at two industry conferences, 2023 and 2024."
+    }
+  ]
+}

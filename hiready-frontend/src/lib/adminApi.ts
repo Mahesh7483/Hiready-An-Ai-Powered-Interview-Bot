@@ -91,6 +91,43 @@ interface Paged<T = unknown> {
   items?: T[];
 }
 
+export type PillarKey = "interview" | "aptitude" | "coding" | "resume";
+
+export interface CohortReadiness {
+  totalStudents: number;
+  scoredStudents: number;
+  /** students with an account but nothing scored yet */
+  unscoredStudents: number;
+  average: number | null;
+  pillars: Record<PillarKey, { weight: number; students: number; average: number | null }>;
+  bands: Array<{ label: string; min: number; max: number; students: number }>;
+}
+
+export interface CohortTopic {
+  topic: string;
+  answered: number;
+  correct: number;
+  /** distinct students who have answered in this topic */
+  students: number;
+  accuracy: number;
+}
+
+export interface CohortEngagement {
+  totalStudents: number;
+  activeToday: number;
+  active7d: number;
+  active30d: number;
+  daily: Array<{ date: string; attempts: number; students: number }>;
+  mostActive: Array<{
+    userId: string;
+    name: string | null;
+    email: string | null;
+    attempts: number;
+    activeDays: number;
+    lastActive: string;
+  }>;
+}
+
 async function getJson<T>(path: string): Promise<T> {
   const res = await apiFetch(path);
   if (!res.ok) {
@@ -257,4 +294,9 @@ export const adminAPI = {
   updateCodingQuestion: (id: string, q: Partial<AdminCodingQuestion>) => sendJson<AdminCodingQuestion>(`/admin/coding-questions/${id}`, "PUT", q),
   deleteCodingQuestion: (id: string) => sendJson<{ message: string }>(`/admin/coding-questions/${id}`, "DELETE"),
   bulkImportCoding: (payload: { items?: unknown[]; csv?: string; dryRun?: boolean }) => sendJson<{ imported: number; failed: number; errors: Array<{ row: number | string; error: string }> }>("/admin/coding-questions/bulk", "POST", payload),
+
+  // Mastery — cohort views of the same four pillars the student sees
+  getCohortReadiness: () => getJson<CohortReadiness>("/admin/readiness"),
+  getCohortTopics: () => getJson<{ topics: CohortTopic[] }>("/admin/weak-topics"),
+  getEngagement: () => getJson<CohortEngagement>("/admin/engagement"),
 };

@@ -1039,7 +1039,7 @@ const VoiceInterviewContent = () => {
     });
 
     toast.success("Interview ended");
-    navigate("/interview-report");
+    navigate("/practice/interview/report");
   };
 
   // ── Round structure: maps question index to the strict prompt's plan ──

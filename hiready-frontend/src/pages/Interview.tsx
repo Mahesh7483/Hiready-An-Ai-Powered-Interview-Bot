@@ -209,7 +209,7 @@ const Interview = () => {
 
   const handleStartTest = () => {
     // Redirect to Voice Interview page
-    navigate("/voice-interview");
+    navigate("/practice/interview/live");
   };
 
   const handleBackHome = () => {
