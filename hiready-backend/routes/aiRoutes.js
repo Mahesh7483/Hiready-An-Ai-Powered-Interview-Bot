@@ -30,6 +30,15 @@ async function groqChat(messages, options = {}) {
     temperature: options.temperature ?? 0.7,
     max_tokens: options.maxTokens ?? 300
   };
+  // Constrained decoding for tasks that must return JSON.
+  //
+  // Without it the model intermittently writes a word where a number belongs —
+  // `"wordCount": fifty` — which is unparseable, burns both retries and
+  // surfaces as a 502 'Failed to produce a valid analysis'. Measured on one
+  // real resume: 3 of 6 responses invalid free-form, 0 of 6 with this set.
+  if (options.json) {
+    payload.response_format = { type: 'json_object' };
+  }
   // Reasoning models (gpt-oss/qwen) silently burn the token budget on hidden
   // chain-of-thought first — with small max_tokens this leaves `content`
   // EMPTY. Capping reasoning effort keeps the budget for the actual answer.
@@ -257,7 +266,7 @@ async function groqJsonTask(prompt, { temperature = 0.3, maxTokens = 2000, maxAt
             (attempt === 1 ? '\n\nIMPORTANT: Your previous response was not valid JSON. Respond ONLY with the raw JSON object.' : '')
         }
       ],
-      { temperature, maxTokens: budget }
+      { temperature, maxTokens: budget, json: true }
     );
     const choice = response.choices?.[0];
 
@@ -468,12 +477,21 @@ router.post('/resume-analyze', async (req, res) => {
         console.log(`Resume analyze OK in ${((Date.now() - startedAt) / 1000).toFixed(1)}s (attempt ${attempt + 1})`);
         return res.json(analysis);
       } catch (err) {
-        // Rate limits won't heal on an immediate retry — bail out fast
+        // Rate limits won't heal on an immediate retry — bail out fast.
+        //
+        // 413 and 429 are different problems and must not share a message. A
+        // daily token quota reported as "the resume is too large" sends the
+        // user off to shorten a resume that was never the issue; no amount of
+        // trimming will help, and the real answer is to wait.
         if (isGroqRateLimit(err)) {
           console.error('Resume analyze rate-limited:', err.message);
-          return res.status(413).json({
-            error:
-              'The resume is too large for the free AI tier right now. Please try again in a minute.'
+          const tooLarge = err.status === 413;
+          const wait = /try again in ([^".]+)/i.exec(err.message || '');
+          return res.status(tooLarge ? 413 : 429).json({
+            error: tooLarge
+              ? 'This resume is too large for the AI tier in use. Please shorten it and try again.'
+              : 'The AI service has hit its usage limit'
+                + (wait ? ` — please try again in ${wait[1].trim()}.` : '. Please try again shortly.')
           });
         }
         // Retry on invalid JSON or invalid shape; keep last error for reporting
