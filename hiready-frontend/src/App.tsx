@@ -45,6 +45,18 @@ const AdminInterviews = lazy(() => import("./pages/admin/AdminInterviews"));
 const AdminUserDetail = lazy(() => import("./pages/admin/AdminUserDetail"));
 const AdminAssessments = lazy(() => import("./pages/admin/AdminAssessments"));
 const AdminCodingQuestions = lazy(() => import("./pages/admin/AdminCodingQuestions"));
+const AdminCompanies = lazy(() => import("./pages/admin/AdminCompanies"));
+const AdminDisclosure = lazy(() => import("./pages/admin/AdminDisclosure"));
+
+// Employer surface — guarded server-side by requireCompany, not by a client role.
+const HirePipeline = lazy(() => import("./pages/hire/HirePipeline"));
+const HireJob = lazy(() => import("./pages/hire/HireJob"));
+const HireCandidate = lazy(() => import("./pages/hire/HireCandidate"));
+const HireDiscover = lazy(() => import("./pages/hire/HireDiscover"));
+
+// Candidate-side consent
+const Privacy = lazy(() => import("./pages/Privacy"));
+const InviteAccept = lazy(() => import("./pages/InviteAccept"));
 
 const queryClient = new QueryClient();
 
@@ -90,6 +102,19 @@ const App = () => (
               <Route path="/admin/assessments" element={<AdminRoute><AdminAssessments /></AdminRoute>} />
               <Route path="/admin/coding-questions" element={<AdminRoute><AdminCodingQuestions /></AdminRoute>} />
               <Route path="/admin/users/:id" element={<AdminRoute><AdminUserDetail /></AdminRoute>} />
+              <Route path="/admin/companies" element={<AdminRoute><AdminCompanies /></AdminRoute>} />
+              <Route path="/admin/disclosure" element={<AdminRoute><AdminDisclosure /></AdminRoute>} />
+
+              {/* ── Employer surface. Access is decided server-side by
+                     requireCompany; ProtectedRoute only ensures a login. ── */}
+              <Route path="/hire" element={<ProtectedRoute><HirePipeline /></ProtectedRoute>} />
+              <Route path="/hire/jobs/:id" element={<ProtectedRoute><HireJob /></ProtectedRoute>} />
+              <Route path="/hire/candidates/:id" element={<ProtectedRoute><HireCandidate /></ProtectedRoute>} />
+              <Route path="/hire/discover" element={<ProtectedRoute><HireDiscover /></ProtectedRoute>} />
+
+              {/* ── Candidate consent ── */}
+              <Route path="/privacy" element={<ProtectedRoute><Privacy /></ProtectedRoute>} />
+              <Route path="/invite/:token" element={<ProtectedRoute><InviteAccept /></ProtectedRoute>} />
               {/* Assessment routes */}
               <Route path="/assessments" element={<ProtectedRoute><AssessmentLanding /></ProtectedRoute>} />
               <Route path="/assessments/take" element={<ProtectedRoute><AssessmentPipeline /></ProtectedRoute>} />

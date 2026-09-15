@@ -766,5 +766,273 @@ router.get('/interview-sessions', async (req, res) => {
   }
 });
 
-module.exports = router;
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phase D — companies and the disclosure audit.
+//
+//  Approval is the switch that lets an employer exist at all: a company signs
+//  up as `pending` and nothing works until an admin activates it. Suspension
+//  is the reverse, and it bites on the suspended company's next request
+//  because middleware/company.js re-reads status every time.
+// ─────────────────────────────────────────────────────────────────────────────
 
+const Company = require('../models/Company');
+const CompanyMembership = require('../models/CompanyMembership');
+const CandidateCompanyConsent = require('../models/CandidateCompanyConsent');
+const DisclosureAudit = require('../models/DisclosureAudit');
+const Job = require('../models/Job');
+const Application = require('../models/Application');
+
+// GET /api/admin/companies
+router.get('/companies', async (req, res) => {
+  try {
+    const { page, limit, skip } = clampPage(req);
+    const filter = {};
+    if (['pending', 'active', 'suspended'].includes(req.query.status)) {
+      filter.status = req.query.status;
+    }
+    if (req.query.search) {
+      filter.name = new RegExp(escapeRegex(req.query.search), 'i');
+    }
+
+    const [companies, total] = await Promise.all([
+      Company.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Company.countDocuments(filter),
+    ]);
+
+    const ids = companies.map((c) => c._id);
+    const [members, jobs] = await Promise.all([
+      CompanyMembership.aggregate([
+        { $match: { companyId: { $in: ids }, status: 'active' } },
+        { $group: { _id: '$companyId', n: { $sum: 1 } } },
+      ]),
+      Job.aggregate([
+        { $match: { companyId: { $in: ids } } },
+        { $group: { _id: '$companyId', n: { $sum: 1 } } },
+      ]),
+    ]);
+    const memberMap = new Map(members.map((m) => [String(m._id), m.n]));
+    const jobMap = new Map(jobs.map((j) => [String(j._id), j.n]));
+
+    res.json({
+      page,
+      pages: Math.max(Math.ceil(total / limit), 1),
+      total,
+      companies: companies.map((c) => ({
+        ...c,
+        membersActive: memberMap.get(String(c._id)) || 0,
+        jobs: jobMap.get(String(c._id)) || 0,
+        seatsUsed: memberMap.get(String(c._id)) || 0,
+      })),
+    });
+  } catch (err) {
+    console.error('Admin companies error:', err.message);
+    res.status(500).json({ error: 'Failed to load companies' });
+  }
+});
+
+// POST /api/admin/companies — create a tenant directly (the seed path)
+router.post('/companies', async (req, res) => {
+  try {
+    const { name, domain = '', seats = 3, status = 'pending' } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    const company = await Company.create({
+      name: name.trim().slice(0, 150),
+      domain: String(domain).trim().toLowerCase().slice(0, 120),
+      seats: Math.min(Math.max(parseInt(seats, 10) || 3, 1), 500),
+      status: ['pending', 'active', 'suspended'].includes(status) ? status : 'pending',
+      createdBy: req.user.id,
+    });
+    logAdminAction(req, 'company.create', 'Company:' + company._id, { name: company.name });
+    res.status(201).json(company);
+  } catch (err) {
+    console.error('Admin company create error:', err.message);
+    res.status(500).json({ error: 'Failed to create company' });
+  }
+});
+
+// GET /api/admin/companies/:id
+router.get('/companies/:id', async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+    const company = await Company.findById(req.params.id).lean();
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+
+    const [memberships, jobs, applications, consents] = await Promise.all([
+      CompanyMembership.find({ companyId: company._id }).lean(),
+      Job.countDocuments({ companyId: company._id }),
+      Application.countDocuments({ companyId: company._id }),
+      CandidateCompanyConsent.countDocuments({
+        companyId: company._id,
+        state: { $in: ['REVEALED', 'IN_PROCESS'] },
+        revokedAt: null,
+      }),
+    ]);
+
+    const userIds = memberships.map((m) => m.userId);
+    const users = await User.find({ _id: { $in: userIds } }).select('name email').lean();
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+    res.json({
+      company,
+      members: memberships.map((m) => ({
+        membershipId: m._id,
+        userId: m.userId,
+        name: (userMap.get(String(m.userId)) || {}).name || null,
+        email: (userMap.get(String(m.userId)) || {}).email || null,
+        role: m.role,
+        status: m.status,
+      })),
+      counts: { jobs, applications, candidatesWithAccess: consents },
+    });
+  } catch (err) {
+    console.error('Admin company detail error:', err.message);
+    res.status(500).json({ error: 'Failed to load company' });
+  }
+});
+
+// PUT /api/admin/companies/:id/status — approve, suspend, reinstate
+router.put('/companies/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['pending', 'active', 'suspended'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const company = await Company.findByIdAndUpdate(
+      req.params.id,
+      { $set: { status } },
+      { new: true }
+    ).lean();
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+
+    // Nothing else to do: middleware/company.js re-reads status on every
+    // request, so suspension takes effect on the company's very next call.
+    logAdminAction(req, 'company.status', 'Company:' + req.params.id, { status });
+    res.json(company);
+  } catch (err) {
+    console.error('Admin company status error:', err.message);
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// PUT /api/admin/companies/:id/seats
+router.put('/companies/:id/seats', async (req, res) => {
+  try {
+    const seats = Math.min(Math.max(parseInt(req.body.seats, 10) || 0, 1), 500);
+    const company = await Company.findByIdAndUpdate(
+      req.params.id,
+      { $set: { seats } },
+      { new: true }
+    ).lean();
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+    logAdminAction(req, 'company.seats', 'Company:' + req.params.id, { seats });
+    res.json(company);
+  } catch (err) {
+    console.error('Admin seats error:', err.message);
+    res.status(500).json({ error: 'Failed to update seats' });
+  }
+});
+
+/**
+ * GET /api/admin/disclosure
+ *
+ * Who was disclosed, to which company, what was disclosed, when, and under
+ * which consent. This is not an activity log — a login trail tells you someone
+ * was busy; this tells you whose personal data left the platform and on what
+ * authority. It is the answer to "who has seen my results?".
+ */
+router.get('/disclosure', async (req, res) => {
+  try {
+    const { page, limit, skip } = clampPage(req);
+    const filter = {};
+    if (req.query.candidateId && mongoose.Types.ObjectId.isValid(req.query.candidateId)) {
+      filter.candidateId = req.query.candidateId;
+    }
+    if (req.query.companyId && mongoose.Types.ObjectId.isValid(req.query.companyId)) {
+      filter.companyId = req.query.companyId;
+    }
+    if (['granted', 'revoked', 'state_changed', 'disclosed'].includes(req.query.action)) {
+      filter.action = req.query.action;
+    }
+
+    const [rows, total] = await Promise.all([
+      DisclosureAudit.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      DisclosureAudit.countDocuments(filter),
+    ]);
+
+    const candidateIds = [...new Set(rows.map((r) => String(r.candidateId)))];
+    const companyIds = [...new Set(rows.map((r) => String(r.companyId)))];
+    const [users, companies] = await Promise.all([
+      User.find({ _id: { $in: candidateIds } }).select('name email').lean(),
+      Company.find({ _id: { $in: companyIds } }).select('name').lean(),
+    ]);
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+    const companyMap = new Map(companies.map((c) => [String(c._id), c]));
+
+    res.json({
+      page,
+      pages: Math.max(Math.ceil(total / limit), 1),
+      total,
+      events: rows.map((r) => ({
+        id: r._id,
+        action: r.action,
+        scopes: r.scopes || [],
+        at: r.createdAt,
+        candidate: userMap.get(String(r.candidateId))
+          ? {
+            id: r.candidateId,
+            name: userMap.get(String(r.candidateId)).name,
+            email: userMap.get(String(r.candidateId)).email,
+          }
+          : { id: r.candidateId, name: null, email: null },
+        company: companyMap.get(String(r.companyId))
+          ? { id: r.companyId, name: companyMap.get(String(r.companyId)).name }
+          : { id: r.companyId, name: null },
+        consentId: r.consentId,
+        meta: r.meta || {},
+      })),
+    });
+  } catch (err) {
+    console.error('Admin disclosure error:', err.message);
+    res.status(500).json({ error: 'Failed to load disclosure log' });
+  }
+});
+
+// GET /api/admin/disclosure/export.csv
+router.get('/disclosure/export.csv', async (req, res) => {
+  try {
+    const rows = await DisclosureAudit.find().sort({ createdAt: -1 }).limit(10000).lean();
+    const candidateIds = [...new Set(rows.map((r) => String(r.candidateId)))];
+    const companyIds = [...new Set(rows.map((r) => String(r.companyId)))];
+    const [users, companies] = await Promise.all([
+      User.find({ _id: { $in: candidateIds } }).select('email').lean(),
+      Company.find({ _id: { $in: companyIds } }).select('name').lean(),
+    ]);
+    const userMap = new Map(users.map((u) => [String(u._id), u.email]));
+    const companyMap = new Map(companies.map((c) => [String(c._id), c.name]));
+
+    const csv = arrayToCsv(
+      rows.map((r) => ({
+        at: r.createdAt ? r.createdAt.toISOString() : '',
+        action: r.action,
+        candidate: userMap.get(String(r.candidateId)) || String(r.candidateId),
+        company: companyMap.get(String(r.companyId)) || String(r.companyId),
+        scopes: (r.scopes || []).join(' '),
+        consentId: String(r.consentId || ''),
+      })),
+      ['at', 'action', 'candidate', 'company', 'scopes', 'consentId']
+    );
+    logAdminAction(req, 'disclosure.export', '', { rows: rows.length });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="disclosure.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Admin disclosure export error:', err.message);
+    res.status(500).json({ error: 'Failed to export' });
+  }
+});
+
+module.exports = router;

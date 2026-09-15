@@ -48,6 +48,21 @@ const assessmentAttemptSchema = new mongoose.Schema(
       },
     ],
     violationScore: { type: Number, default: 0 },
+
+    /**
+     * Derived at finalisation from violationScore. This is the ONLY integrity
+     * signal a recruiter ever sees: it lives on the result they commissioned,
+     * so /hire needs no path to ProctorLog at all.
+     *
+     *   clean       nothing of note
+     *   flagged     violations occurred; the score is usable with judgement
+     *   invalidated the attempt was auto-submitted on the threshold
+     */
+    integrityVerdict: {
+      type: String,
+      enum: ['clean', 'flagged', 'invalidated', null],
+      default: null,
+    },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date, default: null },
   },

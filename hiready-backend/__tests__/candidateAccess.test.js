@@ -7,7 +7,7 @@
 
 jest.mock('../models/CandidateCompanyConsent', () => ({ findOne: jest.fn() }));
 jest.mock('../models/Company', () => ({ findById: jest.fn() }));
-jest.mock('../models/CompanyMembership', () => ({ findOne: jest.fn() }));
+jest.mock('../models/CompanyMembership', () => ({ findOne: jest.fn(), find: jest.fn() }));
 
 const CandidateCompanyConsent = require('../models/CandidateCompanyConsent');
 const Company = require('../models/Company');
@@ -22,6 +22,8 @@ const COMPANY = '6a8aab87b931980132a1d724';
 const consentResolving = (doc) => ({ select: () => ({ lean: async () => doc }) });
 const companyResolving = (doc) => ({ select: () => ({ lean: async () => doc }) });
 const membershipResolving = (doc) => ({ lean: async () => doc });
+/** The no-header path: find().limit(2).lean() */
+const membershipsResolving = (docs) => ({ limit: () => ({ lean: async () => docs }) });
 
 const reqWithCompany = (role = 'recruiter') => ({
   company: { companyId: COMPANY, role, membershipId: 'm1' },
@@ -146,20 +148,20 @@ describe('invariant 2 — nothing is cached across requests', () => {
   });
 
   test('two sequential requests each re-read membership and company status', async () => {
-    CompanyMembership.findOne.mockReturnValue(
-      membershipResolving({ _id: 'm1', companyId: COMPANY, role: 'recruiter' })
+    CompanyMembership.find.mockReturnValue(
+      membershipsResolving([{ _id: 'm1', companyId: COMPANY, role: 'recruiter' }])
     );
     Company.findById.mockReturnValue(companyResolving({ status: 'active' }));
 
     const run = async () => {
-      const req = { user: { id: 'u1' } };
+      const req = { user: { id: 'u1' }, get: () => null, query: {} };
       await new Promise((done) => requireCompany(req, { status: () => ({ json: done }) }, done));
       return req;
     };
     await run();
     await run();
 
-    expect(CompanyMembership.findOne).toHaveBeenCalledTimes(2);
+    expect(CompanyMembership.find).toHaveBeenCalledTimes(2);
     expect(Company.findById).toHaveBeenCalledTimes(2);
   });
 });
@@ -168,12 +170,12 @@ describe('invariant 2 — nothing is cached across requests', () => {
 
 describe('invariant 9 — suspension is enforced before capability creation', () => {
   test('a suspended company is denied, and consent is never even queried', async () => {
-    CompanyMembership.findOne.mockReturnValue(
-      membershipResolving({ _id: 'm1', companyId: COMPANY, role: 'owner' })
+    CompanyMembership.find.mockReturnValue(
+      membershipsResolving([{ _id: 'm1', companyId: COMPANY, role: 'owner' }])
     );
     Company.findById.mockReturnValue(companyResolving({ status: 'suspended' }));
 
-    const req = { user: { id: 'u1' } };
+    const req = { user: { id: 'u1' }, get: () => null, query: {} };
     const body = await new Promise((resolve) =>
       requireCompany(req, { status: () => ({ json: resolve }) }, () =>
         resolve(new Error('should not have called next()'))
@@ -187,10 +189,10 @@ describe('invariant 9 — suspension is enforced before capability creation', ()
   });
 
   test('a removed member is denied even while the company is active', async () => {
-    CompanyMembership.findOne.mockReturnValue(membershipResolving(null));
+    CompanyMembership.find.mockReturnValue(membershipsResolving([]));
     Company.findById.mockReturnValue(companyResolving({ status: 'active' }));
 
-    const req = { user: { id: 'u1' } };
+    const req = { user: { id: 'u1' }, get: () => null, query: {} };
     const body = await new Promise((resolve) =>
       requireCompany(req, { status: () => ({ json: resolve }) }, () =>
         resolve(new Error('should not have called next()'))
@@ -218,5 +220,70 @@ describe('invariant 10 — revocation stops future access only', () => {
       'utf8'
     );
     expect(src).not.toMatch(/AssessmentAttempt|TestResult|deleteMany|remove\(/);
+  });
+});
+
+// ── Multi-tenancy: never guess which company ───────────────────────────────
+
+describe('company resolution is explicit, never guessed', () => {
+  const runMiddleware = (req) =>
+    new Promise((resolve) =>
+      requireCompany(req, { status: () => ({ json: resolve }) }, () => resolve(null))
+    );
+
+  test('a single membership needs no header', async () => {
+    CompanyMembership.find.mockReturnValue(
+      membershipsResolving([{ _id: 'm1', companyId: COMPANY, role: 'recruiter' }])
+    );
+    Company.findById.mockReturnValue(companyResolving({ status: 'active' }));
+
+    const req = { user: { id: 'u1' }, get: () => null, query: {} };
+    expect(await runMiddleware(req)).toBeNull();
+    expect(req.company.companyId).toBe(COMPANY);
+  });
+
+  test('two memberships and no header is REFUSED rather than guessed', async () => {
+    // The bug this replaced: findOne() returned whichever row the collection
+    // happened to yield first, so a recruiter could act on the wrong company
+    // without any signal that a choice had been made for them.
+    CompanyMembership.find.mockReturnValue(
+      membershipsResolving([
+        { _id: 'm1', companyId: COMPANY, role: 'recruiter' },
+        { _id: 'm2', companyId: 'a'.repeat(24), role: 'owner' },
+      ])
+    );
+    const req = { user: { id: 'u1' }, get: () => null, query: {} };
+    expect(await runMiddleware(req)).toEqual({ error: 'Not found' });
+    expect(req.company).toBeUndefined();
+    expect(Company.findById).not.toHaveBeenCalled();
+  });
+
+  test('an explicit header resolves to exactly that company', async () => {
+    CompanyMembership.findOne.mockReturnValue(
+      membershipResolving({ _id: 'm2', companyId: COMPANY, role: 'owner' })
+    );
+    Company.findById.mockReturnValue(companyResolving({ status: 'active' }));
+
+    const req = { user: { id: 'u1' }, get: () => COMPANY, query: {} };
+    expect(await runMiddleware(req)).toBeNull();
+    expect(req.company.companyId).toBe(COMPANY);
+    // Scoped by BOTH user and company: a header alone cannot reach a company
+    // the caller does not belong to.
+    const q = CompanyMembership.findOne.mock.calls[0][0];
+    expect(q.userId).toBe('u1');
+    expect(q.companyId).toBe(COMPANY);
+    expect(q.status).toBe('active');
+  });
+
+  test('a header naming a company you do not belong to is refused', async () => {
+    CompanyMembership.findOne.mockReturnValue(membershipResolving(null));
+    const req = { user: { id: 'u1' }, get: () => 'b'.repeat(24), query: {} };
+    expect(await runMiddleware(req)).toEqual({ error: 'Not found' });
+  });
+
+  test('a malformed header is refused without touching the database', async () => {
+    const req = { user: { id: 'u1' }, get: () => 'not-an-objectid', query: {} };
+    expect(await runMiddleware(req)).toEqual({ error: 'Not found' });
+    expect(CompanyMembership.findOne).not.toHaveBeenCalled();
   });
 });

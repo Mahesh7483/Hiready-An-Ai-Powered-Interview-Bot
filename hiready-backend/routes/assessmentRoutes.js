@@ -4,6 +4,7 @@ const router = express.Router();
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const AssessmentTemplate = require('../models/AssessmentTemplate');
 const AssessmentAttempt = require('../models/AssessmentAttempt');
+const { stampVerdict } = require('../services/integrity');
 const Question = require('../models/Question');
 const CodingQuestion = require('../models/CodingQuestion');
 
@@ -197,7 +198,13 @@ function attemptForClient(attempt, template) {
 
 router.get('/templates', async (req, res) => {
   try {
-    const templates = await AssessmentTemplate.find({ isPublished: true }).sort({ createdAt: -1 }).lean();
+    // companyId: null is load-bearing. A template owned by a company is that
+    // company's private hiring instrument and must never surface in a
+    // student's Practice library — candidates reach those only through an
+    // invite, never by browsing.
+    const templates = await AssessmentTemplate.find({ isPublished: true, companyId: null })
+      .sort({ createdAt: -1 })
+      .lean();
     res.json({ templates });
   } catch {
     res.status(500).json({ error: 'Failed to load templates' });
@@ -434,6 +441,7 @@ router.get('/attempt/current', async (req, res) => {
       const deadline = new Date(attempt.sectionStartedAt.getTime() + section.minutes * 60000 + 60000);
       if (new Date() > deadline) {
         attempt.status = 'auto_submitted';
+      stampVerdict(attempt, template && template.violationThreshold);
         attempt.completedAt = new Date();
         await AssessmentAttempt.updateOne({ _id: attempt._id }, { $set: { status: attempt.status, completedAt: attempt.completedAt } });
         return res.json({ attempt: attemptForClient(attempt, template), expired: true });
@@ -466,6 +474,7 @@ router.post('/attempt/:id/section/:idx/submit', async (req, res) => {
       const deadline = new Date(attempt.sectionStartedAt.getTime() + section.minutes * 60000 + 60000);
       if (new Date() > deadline) {
         attempt.status = 'auto_submitted';
+      stampVerdict(attempt, template && template.violationThreshold);
         attempt.completedAt = new Date();
         await attempt.save();
         return res.status(400).json({ error: 'Section time expired — the attempt has been closed' });
@@ -641,6 +650,7 @@ router.post('/attempt/:id/violation', async (req, res) => {
     let autoSubmitted = false;
     if (attempt.violationScore >= (template.violationThreshold || 100)) {
       attempt.status = 'auto_submitted';
+      stampVerdict(attempt, template && template.violationThreshold);
       attempt.completedAt = new Date();
       autoSubmitted = true;
     }

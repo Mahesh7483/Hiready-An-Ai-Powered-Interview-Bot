@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Company = require('../models/Company');
 const CompanyMembership = require('../models/CompanyMembership');
 
@@ -18,6 +19,15 @@ const CompanyMembership = require('../models/CompanyMembership');
  *
  *  9. Company status is checked BEFORE any capability is created, so a
  *     suspension cuts access ahead of the consent lookup rather than after it.
+ *
+ * MULTI-TENANCY: a user may belong to several companies. Picking one with a
+ * bare findOne() is non-deterministic — it follows natural collection order —
+ * and would let a recruiter act on the wrong company's pipeline without
+ * noticing. So the company is resolved explicitly:
+ *
+ *   1. an `x-company-id` header, validated against an active membership; else
+ *   2. the user's single active membership, when they have exactly one; else
+ *   3. refusal. listMemberships() below is how a client learns what to send.
  */
 
 /** The single refusal. Identical for every reason, on purpose. */
@@ -25,21 +35,64 @@ function refuse(res) {
   return res.status(404).json({ error: 'Not found' });
 }
 
+/** Every active membership for a user, with company name and status. */
+async function listMemberships(userId) {
+  const memberships = await CompanyMembership.find({ userId, status: 'active' })
+    .sort({ createdAt: 1 })
+    .lean();
+  if (!memberships.length) return [];
+
+  const companies = await Company.find({ _id: { $in: memberships.map((m) => m.companyId) } })
+    .select('name status')
+    .lean();
+  const byId = new Map(companies.map((c) => [String(c._id), c]));
+
+  return memberships
+    .map((m) => {
+      const company = byId.get(String(m.companyId));
+      return company
+        ? {
+          companyId: String(m.companyId),
+          name: company.name,
+          status: company.status,
+          role: m.role,
+          membershipId: String(m._id),
+        }
+        : null;
+    })
+    .filter(Boolean);
+}
+
 /**
  * Populates req.company = { companyId, role, membershipId } on success.
  *
  * Deliberately does NOT grant access to any candidate — that requires
- * candidateAccess(), which is Phase B. This middleware only establishes
- * "you are an active member of an active company".
+ * candidateAccess(). This only establishes "you are an active member of this
+ * active company".
  */
 async function requireCompany(req, res, next) {
   try {
     if (!req.user || !req.user.id) return refuse(res);
 
-    const membership = await CompanyMembership.findOne({
-      userId: req.user.id,
-      status: 'active',
-    }).lean();
+    const requested = req.get('x-company-id') || req.query.companyId || null;
+
+    let membership;
+    if (requested) {
+      if (!mongoose.Types.ObjectId.isValid(String(requested))) return refuse(res);
+      membership = await CompanyMembership.findOne({
+        userId: req.user.id,
+        companyId: requested,
+        status: 'active',
+      }).lean();
+    } else {
+      const active = await CompanyMembership.find({ userId: req.user.id, status: 'active' })
+        .limit(2)
+        .lean();
+      // Exactly one is unambiguous. Two or more and the caller must say which:
+      // guessing here is how a recruiter ends up looking at the wrong company.
+      if (active.length !== 1) return refuse(res);
+      [membership] = active;
+    }
     if (!membership) return refuse(res);
 
     // Read the company fresh. This is the suspension kill switch: flipping
@@ -76,4 +129,4 @@ function requireCompanyRole(...roles) {
   };
 }
 
-module.exports = { requireCompany, requireCompanyRole };
+module.exports = { requireCompany, requireCompanyRole, listMemberships };

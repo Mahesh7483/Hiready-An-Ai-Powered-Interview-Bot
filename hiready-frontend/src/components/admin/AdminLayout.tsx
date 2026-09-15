@@ -9,6 +9,8 @@ import {
   ArrowLeft,
   Layers,
   Code,
+  Building2,
+  KeyRound,
 } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -20,6 +22,8 @@ const NAV_ITEMS = [
   { to: "/admin/interviews", label: "Interviews", icon: Video, end: false },
   { to: "/admin/proctoring", label: "Proctoring", icon: ShieldAlert, end: false },
   { to: "/admin/assessments", label: "Assessments", icon: Layers, end: false },
+  { to: "/admin/companies", label: "Companies", icon: Building2, end: false },
+  { to: "/admin/disclosure", label: "Disclosure", icon: KeyRound, end: false },
 ];
 
 const AdminLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
