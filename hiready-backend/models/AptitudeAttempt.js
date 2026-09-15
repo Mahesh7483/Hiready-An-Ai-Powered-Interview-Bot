@@ -47,6 +47,19 @@ const aptitudeAttemptSchema = new mongoose.Schema(
       type: Number,
       default: 1
     },
+    /**
+     * Questions whose answer was shown mid-attempt (practice mode only).
+     *
+     * MUST stay declared. Under mongoose's default strict:true an undeclared
+     * path is dropped in silence — no error, no update — which is how the
+     * express-interest funnel on the hire side sat dead for weeks while every
+     * response said {ok:true}. Recorded so a practice run that was walked
+     * through can never be presented as an unaided score.
+     */
+    revealedQuestionIds: [{
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Question'
+    }],
     startedAt: {
       type: Date,
       default: Date.now

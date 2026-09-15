@@ -89,7 +89,12 @@ router.post('/quiz/start', requireAuth, async (req, res) => {
       answerKey,
       status: 'in_progress',
       keyVersion: 1,
-      startedAt: new Date()
+      startedAt: new Date(),
+      // Same backstop as the auto-issued path: an attempt left open cannot be
+      // revived days later with the answers looked up in between. Generous,
+      // because save-result refuses an expired attempt and a tight value here
+      // would destroy honest work.
+      expiresAt: new Date(Date.now() + (questionIds.length * 3 + 15) * 60000)
     });
 
     await attempt.save();
@@ -119,7 +124,9 @@ router.post('/quiz/start', requireAuth, async (req, res) => {
 // Keeps backwards compatibility: /quiz/logical still works with default 10
 // Category is resolved flexibly: "quantitative", "Quantitative Aptitude",
 // "quantitative-aptitude" all match the stored category name.
-router.get('/quiz/:category', async (req, res) => {
+// Requires auth: an open question feed lets anyone enumerate the bank, and
+// pairs with a graded attempt that must belong to a known user.
+router.get('/quiz/:category', requireAuth, async (req, res) => {
   try {
     const count = Math.min(Math.max(parseInt(req.query.count) || 10, 1), 50);
     const { difficulty, negativeMarking, mode } = req.query;
@@ -171,7 +178,13 @@ router.get('/quiz/:category', async (req, res) => {
           answerKey,
           status: 'in_progress',
           keyVersion: 1,
-          startedAt: new Date()
+          startedAt: new Date(),
+          // A server-side backstop so an attempt cannot be parked and resumed
+          // days later with the answers looked up in between. Deliberately
+          // generous — the client clock runs the real countdown, this only
+          // stops an abandoned attempt being revived. save-result rejects an
+          // expired attempt, so a tight value here would destroy honest work.
+          expiresAt: new Date(Date.now() + (questions.length * 3 + 15) * 60000)
         });
         await attempt.save();
         res.setHeader('X-Attempt-Id', String(attempt._id));
@@ -272,54 +285,96 @@ router.get('/quiz/:category/adaptive', requireAuth, async (req, res) => {
 
 
 // Submit quiz — optional negative marking (-0.25 per wrong answer)
-router.post('/quiz/submit', async (req, res) => {
+/*
+ * REMOVED: POST /quiz/submit
+ *
+ * It took an arbitrary list of questionIds — bound to no attempt, from any
+ * caller, with NO requireAuth — and returned `correctAnswer` for every one of
+ * them. Combined with the equally open GET /quiz/:category it was a complete
+ * answer key, readable by anyone who could reach the server, logged in or not.
+ *
+ * Grading now happens in exactly one place: POST /quiz/save-result, which binds
+ * to a server-issued attempt, verifies ownership and expiry, iterates the
+ * server-locked questionIds, and ignores any score the client sends.
+ *
+ * Practice mode's per-question feedback is served by
+ * POST /quiz/attempt/:attemptId/reveal below, which discloses ONE answer, only
+ * from the caller's own in-progress PRACTICE attempt.
+ */
+
+/**
+ * POST /api/questions/quiz/attempt/:attemptId/reveal   { questionId, selected }
+ *
+ * Practice-mode feedback: the correct answer and explanation for ONE question.
+ *
+ * Every condition below exists to stop this becoming the oracle it replaces:
+ *   - authenticated, and the attempt must belong to the caller
+ *   - the attempt must still be in progress and unexpired
+ *   - mode must be 'practice'. A graded test can never reveal an answer,
+ *     which is the whole point of having two modes
+ *   - the question must be one of the ids locked into THIS attempt, so a
+ *     harvested id from elsewhere resolves to nothing
+ *   - one question per call, and the caller must commit a choice first
+ *
+ * The commitment is recorded on the attempt. Revealing is not free: it marks
+ * that question, so a practice run cannot later be presented as an unaided one.
+ */
+router.post('/quiz/attempt/:attemptId/reveal', requireAuth, async (req, res) => {
   try {
-    const { answers, negativeMarking } = req.body;
+    const { attemptId } = req.params;
+    const { questionId, selected } = req.body;
 
-    if (!Array.isArray(answers) || answers.length === 0) {
-      return res.status(400).json({ error: 'answers must be a non-empty array' });
+    if (!mongoose.Types.ObjectId.isValid(attemptId)) {
+      return res.status(400).json({ error: 'Valid attemptId is required' });
+    }
+    if (!questionId || !mongoose.Types.ObjectId.isValid(questionId)) {
+      return res.status(400).json({ error: 'Valid questionId is required' });
+    }
+    if (typeof selected !== 'string' || !selected.trim()) {
+      // Answer first, then see. Otherwise this is just a lookup.
+      return res.status(400).json({ error: 'selected is required before an answer can be revealed' });
     }
 
-    // Collect valid ids and grade all questions in one query (avoids N+1)
-    let ids;
-    try {
-      ids = answers.map((a) => new mongoose.Types.ObjectId(a.questionId));
-    } catch {
-      return res.status(400).json({ error: 'Invalid questionId format' });
+    const attempt = await AptitudeAttempt.findById(attemptId);
+    // One shape for every refusal below: a caller must not be able to tell
+    // "no such attempt" from "not yours" from "already finished".
+    const refuse = () => res.status(404).json({ error: 'Attempt not available' });
+
+    if (!attempt) return refuse();
+    if (String(attempt.userId) !== String(req.user.id)) return refuse();
+    if (attempt.status !== 'in_progress') return refuse();
+    if (attempt.expiresAt && attempt.expiresAt < new Date()) return refuse();
+    if (attempt.mode !== 'practice') {
+      return res.status(403).json({ error: 'Answers are not revealed during a graded test' });
     }
+    if (!attempt.questionIds.some((id) => String(id) === String(questionId))) return refuse();
 
-    const questions = await Question.find({ _id: { $in: ids } });
-    const questionMap = new Map(questions.map((q) => [String(q._id), q]));
+    const key = attempt.answerKey instanceof Map
+      ? attempt.answerKey.get(String(questionId))
+      : (attempt.answerKey || {})[String(questionId)];
+    if (!key) return refuse();
 
-    const applyPenalty = Boolean(negativeMarking);
-    // Anti-cheat: grade each question at most once (first answer wins) —
-    // duplicate questionIds in the payload can't inflate the score.
-    const gradedIds = new Set();
-    let score = 0;
-    const results = [];
-    for (const item of answers) {
-      const qid = String(item.questionId);
-      if (gradedIds.has(qid)) continue;
-      gradedIds.add(qid);
-      const question = questionMap.get(qid);
-      if (question) {
-        const isCorrect = question.Answer === item.selected;
-        if (isCorrect) score += 1;
-        else if (applyPenalty && item.selected) score -= 0.25;
-        results.push({
-          questionId: item.questionId,
-          selected: item.selected,
-          correctAnswer: question.Answer,
-          isCorrect
-        });
-      }
-    }
-    if (applyPenalty) score = Math.max(0, Math.round(score * 100) / 100);
+    const chosen = String(selected).trim().toUpperCase();
+    const isCorrect = chosen === String(key).trim().toUpperCase();
 
-    res.json({ score, negativeApplied: applyPenalty, results });
+    // Record that this one was revealed, and what was chosen before seeing it.
+    await AptitudeAttempt.updateOne(
+      { _id: attempt._id, userId: req.user.id },
+      { $addToSet: { revealedQuestionIds: questionId } }
+    );
+
+    const question = await Question.findById(questionId).select('Explanation').lean();
+
+    res.json({
+      questionId,
+      selected: chosen,
+      correctAnswer: String(key).trim().toUpperCase(),
+      isCorrect,
+      explanation: question ? question.Explanation || '' : '',
+    });
   } catch (err) {
-    console.error('Quiz submit error:', err.message);
-    res.status(500).json({ error: 'Failed to submit quiz' });
+    console.error('Reveal answer error:', err.message);
+    res.status(500).json({ error: 'Failed to reveal answer' });
   }
 });
 

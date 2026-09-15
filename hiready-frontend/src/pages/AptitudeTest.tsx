@@ -65,6 +65,12 @@ const AptitudeTest = ({
   const [questions, setQuestions] = useState<QuizQuestion[]>([]);
   const [visitedQuestions, setVisitedQuestions] = useState<Set<string>>(new Set());
   const [markedForReview, setMarkedForReview] = useState<Set<string>>(new Set());
+  /**
+   * The server-issued AptitudeAttempt for this run, named in the X-Attempt-Id
+   * header when the questions are fetched. Grading is bound to it: without one
+   * there is nothing the server will score, which is the point.
+   */
+  const attemptIdRef = useRef<string | null>(null);
   const proctorLogsRef = useRef<ProctorEvent[]>([]);
   const sessionIdRef = useRef(`aptitude-${Date.now()}`);
   const warningCountRef = useRef(0);
@@ -139,9 +145,18 @@ const AptitudeTest = ({
         const data = await response.json();
         return (data.questions ?? []) as QuizQuestion[];
       }
-      const url = `${API_BASE_URL}/questions/quiz/${topic}?count=${questionCount}${difficulty ? `&difficulty=${difficulty}` : ""}`;
-      const response = await fetch(url);
+      // mode is declared to the server, not just to the UI: a 'test' attempt
+      // will refuse to reveal answers, and that refusal is what makes the two
+      // modes mean anything.
+      const url = `${API_BASE_URL}/questions/quiz/${topic}?count=${questionCount}`
+        + `&mode=${isPractice ? "practice" : "test"}`
+        + (difficulty ? `&difficulty=${difficulty}` : "");
+      const response = await fetch(url, { headers: getAuthHeaders() });
       if (!response.ok) throw new Error("Failed to load questions");
+      // The server issues an AptitudeAttempt alongside the questions and names
+      // it here. Grading is impossible without it — by design.
+      const issued = response.headers.get("X-Attempt-Id");
+      if (issued) attemptIdRef.current = issued;
       return response.json();
     },
   });
@@ -221,13 +236,26 @@ const AptitudeTest = ({
   // Practice mode: grade a single answer via the backend
   const checkAnswerMutation = useMutation({
     mutationFn: async ({ questionId, selected }: { questionId: string; selected: string }) => {
-      const response = await fetch(`${API_BASE_URL}/questions/quiz/submit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: [{ questionId, selected }] }),
-      });
-      if (!response.ok) throw new Error("Failed to check answer");
-      return response.json();
+      // Reveals ONE answer, from this user's own in-progress PRACTICE attempt.
+      // The endpoint it replaced took any question id from anyone, with no
+      // auth and no attempt, and handed back the correct answer.
+      const attemptId = attemptIdRef.current;
+      if (!attemptId) throw new Error("This practice session is not registered with the server");
+      const response = await fetch(
+        `${API_BASE_URL}/questions/quiz/attempt/${attemptId}/reveal`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+          body: JSON.stringify({ questionId, selected }),
+        }
+      );
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to check answer");
+      }
+      const data = await response.json();
+      // Shaped like the old response so the caller below is unchanged.
+      return { results: [data] };
     },
     onSuccess: (data, variables) => {
       const res = data.results?.[0];
@@ -408,31 +436,53 @@ const AptitudeTest = ({
       sessionStorage.removeItem("aptitudeTimeSpent");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/questions/quiz/submit`, {
+      const attemptId = attemptIdRef.current;
+      if (!attemptId) {
+        // Without a server-issued attempt there is nothing to grade against.
+        // Failing here is correct: the alternative is a score the server never
+        // agreed to, which is exactly what this rewrite removes.
+        toast.error("This session was not registered with the server, so it cannot be scored.");
+        return;
+      }
+
+      // THE grading call. Previously the score came from an unauthenticated
+      // endpoint that returned the correct answer for every question, and this
+      // page computed the total itself. The server is now the only grader: it
+      // iterates the question ids IT locked at issue time, applies its own
+      // answer key, and ignores anything score-shaped in this payload.
+      const saveResponse = await fetch(`${API_BASE_URL}/questions/quiz/save-result`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers: finalAnswers, negativeMarking }),
+        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        body: JSON.stringify({
+          attemptId,
+          negativeMarking,
+          timeTaken,
+          warningCount: warningCountRef.current,
+          preset: `${topic}-${questions.length}q`,
+          answers: finalAnswers.map((a) => ({
+            ...a,
+            timeSpentMs: timeSpentMap[a.questionId] ?? null,
+          })),
+        }),
       });
 
-      const result = await response.json();
+      const graded = await saveResponse.json().catch(() => null);
 
-      let finalSelectedAnswers = result.results || [];
-      if (!result.results || result.results.length === 0) {
-        finalSelectedAnswers = finalAnswers.map((answer) => {
-          const question = questions.find((q) => q._id === answer.questionId);
-          return {
-            questionId: answer.questionId,
-            selected: answer.selected,
-            correctAnswer: question?.Answer || "",
-            isCorrect: question?.Answer === answer.selected,
-          };
-        });
+      if (!saveResponse.ok) {
+        if (saveResponse.status === 409 && graded?.resultId) {
+          // Already graded — a double submit or a recovered crash. Send them to
+          // the result they actually have rather than grading a second time.
+          toast.info("This attempt was already submitted.");
+          navigate("/practice/aptitude/result");
+          return;
+        }
+        throw new Error(graded?.error || `Could not submit (${saveResponse.status})`);
       }
 
       const testResult: AptitudeTestResult = {
-        score: result.score,
-        totalQuestions: questions.length,
-        selectedAnswers: finalSelectedAnswers,
+        score: graded.score,
+        totalQuestions: graded.totalQuestions,
+        selectedAnswers: graded.results ?? [],
         startTime: startTime!,
         endTime,
         timeTaken: formatTime(timeTaken),
@@ -442,47 +492,15 @@ const AptitudeTest = ({
         difficulty,
       };
 
-      const resultData = {
-        ...testResult,
-        questions: questions,
-      };
-      sessionStorage.setItem("aptitudeTestResult", JSON.stringify(resultData));
+      sessionStorage.setItem(
+        "aptitudeTestResult",
+        JSON.stringify({ ...testResult, questions, breakdown: graded.breakdown })
+      );
       sessionStorage.setItem("aptitudeProctorLogs", JSON.stringify(proctorLogsRef.current));
-
-      // Also persist to backend for analytics — identity comes from the JWT;
-      // silently skipped for Firebase-only sessions without a backend token
-      if (localStorage.getItem("token")) {
-        try {
-          const saveResponse = await fetch(`${API_BASE_URL}/questions/quiz/save-result`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              ...getAuthHeaders(),
-            },
-            body: JSON.stringify({
-              ...testResult,
-              startTime: undefined,
-              endTime: undefined,
-              negativeMarking,
-              preset: `${topic}-${questions.length}q`,
-              selectedAnswers: (finalSelectedAnswers as Array<{ questionId: string }>).map((a) => ({
-                ...a,
-                timeSpentMs: timeSpentMap[a.questionId] ?? null,
-              })),
-            }),
-          });
-          // Percentile from the save response → result page
-          if (saveResponse.ok) {
-            const saveData = await saveResponse.json().catch(() => null);
-            if (saveData && typeof saveData.percentile === "number") {
-              sessionStorage.setItem("aptitudePercentile", String(saveData.percentile));
-            } else {
-              sessionStorage.removeItem("aptitudePercentile");
-            }
-          }
-        } catch {
-          // Analytics save is non-critical
-        }
+      if (typeof graded.percentile === "number") {
+        sessionStorage.setItem("aptitudePercentile", String(graded.percentile));
+      } else {
+        sessionStorage.removeItem("aptitudePercentile");
       }
 
       toast.success(isPractice ? "Practice session completed!" : "Test completed!");
