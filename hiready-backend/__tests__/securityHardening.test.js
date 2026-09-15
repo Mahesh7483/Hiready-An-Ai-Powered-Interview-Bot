@@ -62,15 +62,46 @@ describe('H-2 · the signing key cannot be absent or weak', () => {
   });
 });
 
-describe('L-1 · token verification pins the algorithm', () => {
-  test.each([
-    ['middleware/auth.js', auth],
-    ['routes/questionRoutes.js', questionRoutes],
-  ])('%s passes algorithms to jwt.verify', (_label, src) => {
-    const calls = src.match(/jwt\.verify\([^)]*\)/g) || [];
-    const ours = calls.filter((c) => c.includes('JWT_SECRET'));
-    expect(ours.length).toBeGreaterThan(0);
-    ours.forEach((c) => expect(c).toMatch(/algorithms:\s*\[\s*['"]HS256['"]\s*\]/));
+describe('L-1 · every token verification pins the algorithm', () => {
+  /**
+   * Derived, not listed. The first version of this guard named two files by
+   * hand and passed while services/collab.js — a third jwt.verify against our
+   * own secret — stayed unpinned. A list someone must remember to extend is
+   * not a guard.
+   */
+  function verifySites() {
+    const out = [];
+    const walk = (dir) => {
+      fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+        if (e.name === 'node_modules' || e.name === '__tests__') return;
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) return walk(full);
+        if (!e.name.endsWith('.js')) return;
+        const src = fs.readFileSync(full, 'utf8');
+        const re = /jwt\.verify\([\s\S]{0,200}?\)/g;
+        let m;
+        while ((m = re.exec(src)) !== null) {
+          // Only our own HMAC tokens; the Firebase path verifies RS256 against
+          // Google's certs and pins its algorithms separately.
+          if (m[0].includes('JWT_SECRET')) {
+            out.push({ file: path.relative(BACKEND, full).split(path.sep).join('/'), call: m[0] });
+          }
+        }
+      });
+    };
+    for (const d of ['routes', 'services', 'middleware']) walk(path.join(BACKEND, d));
+    return out;
+  }
+
+  const SITES = verifySites();
+
+  test('the scan found every verification site', () => {
+    // Non-vacuity: a regex matching nothing would make the rest pass for free.
+    expect(SITES.length).toBeGreaterThanOrEqual(3);
+  });
+
+  test.each(SITES.map((s) => [s.file, s]))('%s pins HS256', (_file, site) => {
+    expect(site.call).toMatch(/algorithms:\s*\[\s*['"]HS256['"]\s*\]/);
   });
 });
 
@@ -115,5 +146,64 @@ describe('baseline protections stay in place', () => {
     // Blocks path traversal into the execution directory.
     const exec = read('routes/coding/execution.js');
     expect(exec).toMatch(/\^\[A-Za-z0-9\]\[A-Za-z0-9\._-\]\*\$/);
+  });
+});
+
+describe('A-1 · an unverified email cannot confer a role', () => {
+  const src = read('routes/authRoutes.js');
+
+  test('promotion is gated on a verified identity', () => {
+    expect(src).toMatch(/maybePromoteAdmin\(userDoc, \{ emailVerified = false \} = \{\}\)/);
+    const fn = src.slice(src.indexOf('async function maybePromoteAdmin'), src.indexOf('function signToken'));
+    expect(fn).toMatch(/if \(!emailVerified\) return;/);
+  });
+
+  test('signup never promotes', () => {
+    // It creates an account from an address nobody has proven ownership of.
+    const signup = src.slice(src.indexOf('router.post("/signup"'), src.indexOf('router.post("/login"'));
+    expect(signup).not.toMatch(/maybePromoteAdmin\(/);
+  });
+
+  test('the Google path promotes only after email_verified was enforced', () => {
+    const google = src.slice(src.indexOf('router.post("/google"'), src.indexOf('router.post("/signup"'));
+    expect(google).toMatch(/payload\.email_verified/);
+    expect(google).toMatch(/maybePromoteAdmin\(user, \{ emailVerified: true \}\)/);
+  });
+
+  test('login cannot grant a role to a non-admin', () => {
+    const login = src.slice(src.indexOf('router.post("/login"'));
+    expect(login).toMatch(/emailVerified: user\.role === "admin"/);
+  });
+});
+
+describe('A-2 / A-3 · collab authorization fails closed', () => {
+  const src = read('services/collab.js');
+
+  test('an unreachable database refuses the join', () => {
+    // The checks used to live inside `if (readyState === 1)`, so an outage
+    // skipped them entirely and every socket joined any room it named.
+    const guard = src.slice(src.indexOf('readyState !== 1'), src.indexOf('readyState !== 1') + 200);
+    expect(guard).toMatch(/return socket\.emit\('coding:error'/);
+  });
+
+  test('a verification error refuses the join', () => {
+    const join = src.slice(src.indexOf("socket.on('coding:join'"), src.indexOf("socket.on('coding:state-request'"));
+    const catchBlock = join.slice(join.indexOf('} catch (err)'));
+    expect(catchBlock).toMatch(/return socket\.emit\('coding:error'/);
+  });
+
+  test('ad-hoc rooms belong to whoever opened them', () => {
+    // The default used to be ALLOW for any sessionId with no InterviewSession
+    // behind it — which is exactly the shape the workspace generated.
+    expect(src).toMatch(/adhocRoomOwners/);
+    const join = src.slice(src.indexOf("socket.on('coding:join'"));
+    expect(join).toMatch(/owner && owner !== uid/);
+  });
+});
+
+describe('A-5 · paid endpoints are metered per user', () => {
+  test('the AI routes carry their own limiter keyed on the account', () => {
+    expect(server).toMatch(/app\.use\('\/api\/ai', apiLimiter, aiLimiter, aiRoutes\)/);
+    expect(server).toMatch(/keyGenerator: \(req\) => \(req\.user && req\.user\.id\)/);
   });
 });

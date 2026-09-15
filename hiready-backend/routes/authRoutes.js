@@ -10,7 +10,22 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * Auto-promotes emails listed in the ADMIN_EMAILS env var (comma-separated)
  * to the admin role. Called after every identity-issuing flow.
  */
-async function maybePromoteAdmin(userDoc) {
+async function maybePromoteAdmin(userDoc, { emailVerified = false } = {}) {
+  /*
+   * An UNVERIFIED email must never confer a role.
+   *
+   * /signup creates an account from an address nobody has proven ownership of
+   * — this application has no email verification at all — and called this
+   * immediately afterwards. Anyone who knew a listed admin address could
+   * register it and receive an admin token in the same response: the whole of
+   * /api/admin, including every user's PII, the biometric snapshot gallery,
+   * the disclosure audit, and user deletion.
+   *
+   * Only an identity provider that actually verified the address, or an
+   * account that already holds the role, satisfies this.
+   */
+  if (!emailVerified) return;
+
   const adminEmails = (process.env.ADMIN_EMAILS || "")
     .split(",")
     .map((e) => e.trim().toLowerCase())
@@ -112,7 +127,8 @@ router.post("/google", async (req, res) => {
     }
 
     await user.save();
-    await maybePromoteAdmin(user);
+    // payload.email_verified was enforced earlier in this handler.
+    await maybePromoteAdmin(user, { emailVerified: true });
 
     res.json({
       message: "Login successful",
@@ -162,7 +178,9 @@ router.post("/signup", async (req, res) => {
     });
 
     await user.save();
-    await maybePromoteAdmin(user);
+    // Deliberately NOT promoted: this address is unverified. Admin is granted
+    // through /admin/users by an existing admin, or seeded with
+    // scripts/makeAdmin.js.
 
     // Auto-login: hand back the same session payload as /login
     res.json({
@@ -203,7 +221,8 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
-    await maybePromoteAdmin(user);
+    // A no-op for anyone who is not already an admin: logging in never grants.
+    await maybePromoteAdmin(user, { emailVerified: user.role === "admin" });
     const isAdmin = user.role === "admin";
 
     const token = signToken(user._id);
