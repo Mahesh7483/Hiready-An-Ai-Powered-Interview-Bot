@@ -246,6 +246,7 @@ function parseLLMJson(text) {
  */
 async function groqJsonTask(prompt, { temperature = 0.3, maxTokens = 2000, maxAttempts = 2 } = {}) {
   let analysisText = '';
+  let budget = maxTokens;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const response = await groqChat(
       [
@@ -256,9 +257,28 @@ async function groqJsonTask(prompt, { temperature = 0.3, maxTokens = 2000, maxAt
             (attempt === 1 ? '\n\nIMPORTANT: Your previous response was not valid JSON. Respond ONLY with the raw JSON object.' : '')
         }
       ],
-      { temperature, maxTokens }
+      { temperature, maxTokens: budget }
     );
-    analysisText = response.choices?.[0]?.message?.content || '';
+    const choice = response.choices?.[0];
+
+    // finish_reason 'length' means the model was cut off mid-object.
+    //
+    // This must NOT fall through to repairTruncatedJson. That function closes
+    // the open braces and hands back a perfectly valid object — one simply
+    // missing everything after the cut. In the resume schema the casualties are
+    // all at the end (strengths, improvements, criticalIssues, skillsDistribution,
+    // suggestedBullets), so the report drew those cards empty with no error
+    // anywhere: HTTP 200, JSON parsed, validator passed. Retry with room.
+    if (choice?.finish_reason === 'length') {
+      console.warn(
+        'Groq response truncated at %d tokens (attempt %d) — retrying with a larger budget',
+        budget, attempt + 1
+      );
+      budget = Math.min(budget * 2, 8000);
+      continue;
+    }
+
+    analysisText = choice?.message?.content || '';
     if (!analysisText.trim()) {
       // Usually means reasoning consumed the whole token budget
       console.warn('Groq returned EMPTY content (attempt %d) — max_tokens may be too low', attempt + 1);
@@ -381,13 +401,27 @@ function validateResumeAnalysis(a) {
   }
   if (!Array.isArray(a.extractedSkills)) throw new Error('extractedSkills must be an array');
   if (typeof a.candidateName !== 'string') throw new Error('candidateName missing');
+
+  // Everything checked above sits at the TOP of the prompt's schema, so a
+  // response truncated anywhere after the scores still passed — and the report
+  // rendered "Key Strengths", "Areas for Improvement" and "Critical Issues to
+  // Fix" as empty cards. Validate what the page actually draws, so a short
+  // response fails loudly and the retry fires.
+  for (const key of ['strengths', 'improvements', 'criticalIssues']) {
+    if (!Array.isArray(a[key]) || a[key].length === 0) {
+      throw new Error(`missing/empty ${key}`);
+    }
+  }
   return true;
 }
 
 // POST /api/ai/resume-analyze — ATS analysis runs server-side
 router.post('/resume-analyze', async (req, res) => {
   const { resumeText, targetRole, experienceLevel, jobDescription, maxTokens: clientMaxTokens } = req.body;
-  const tokenBudget = Math.min(Math.max(parseInt(clientMaxTokens, 10) || 1200, 200), 4000);
+  // The schema asks for ~20 fields including six section audits and four bullet
+  // rewrites; a complete response measures ~1550 completion tokens. The old
+  // default of 1200 cut off every single one mid-object.
+  const tokenBudget = Math.min(Math.max(parseInt(clientMaxTokens, 10) || 3000, 200), 4000);
 
   if (
     !resumeText ||
@@ -762,3 +796,10 @@ Respond ONLY with valid JSON:
 });
 
 module.exports = router;
+
+/**
+ * Pure helpers exposed for tests. No route state, no network — these are the
+ * three pieces that decide whether a truncated model response reaches the user
+ * as a half-empty report, so they are worth asserting directly.
+ */
+module.exports._internal = { validateResumeAnalysis, repairTruncatedJson, parseLLMJson };
