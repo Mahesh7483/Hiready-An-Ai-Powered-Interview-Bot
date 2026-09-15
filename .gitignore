@@ -21,3 +21,6 @@ build/
 # internal tooling
 .opencode/
 .github/
+# Row dumps written by scripts/cleanupOrphanedUserData.js before it deletes.
+# Real user data — never commit these.
+hiready-backend/backups/

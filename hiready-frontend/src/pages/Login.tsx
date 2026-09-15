@@ -39,7 +39,7 @@ const Login = () => {
       if (response.user) {
         localStorage.setItem("user", JSON.stringify(response.user));
       }
-      navigate("/dashboard");
+      navigate("/mastery");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";
       toast.error(message || "Login failed");
@@ -54,7 +54,7 @@ const Login = () => {
     try {
       const userData = await signInWithGoogle();
       toast.success(`Welcome back, ${userData.displayName || "User"}!`);
-      navigate("/dashboard");
+      navigate("/mastery");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";
       toast.error(message || "Failed to sign in with Google");

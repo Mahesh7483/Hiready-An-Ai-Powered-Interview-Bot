@@ -1,0 +1,7 @@
+endpoint,layer,totalRequests,successCount,successRatePct,p50_median_ms,q1_ms,q3_ms,iqr_ms,p95_ms,min_ms,max_ms
+"resume-analyze","backend + external LLM",30,29,96.7,27149.53,26032.1,28056.53,2024.43,29019.84,16386.73,38303.13
+"interview-turn (chat)","backend + external LLM",30,30,100,4242.46,4141.6,4549.45,407.85,4702.65,3513.74,5201.63
+"star-coach","backend + external LLM",30,30,100,5704.73,5518.57,5886.57,367.99,6117.54,3965.05,8941.63
+"code-execute (javascript)","backend sandbox only",30,30,100,95.59,92.13,99.45,7.33,105.74,88.55,157.2
+"code-execute (python)","backend sandbox only",30,30,100,71.22,67.78,78.97,11.19,99.8,61.61,141.44
+"stt-token mint","backend + external ASR auth",30,30,100,349.97,309.98,715.39,405.41,1684.34,280.82,1904.15

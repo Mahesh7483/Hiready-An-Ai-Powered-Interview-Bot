@@ -66,7 +66,7 @@ const ResumeHistory = () => {
     try {
       const full = await fetchResumeAnalysis(id);
       sessionStorage.setItem("resumeAnalysis", JSON.stringify(full.resultJson ?? full));
-      navigate("/resume-report");
+      navigate("/practice/resume/report");
     } catch {
       toast.error("Failed to open report");
     }

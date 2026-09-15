@@ -1,0 +1,30 @@
+{"endpoint":"resume-analyze","layer":"backend + external LLM","rep":0,"ms":3923.5285,"ok":true,"status":200,"err":null}
+{"endpoint":"resume-analyze","layer":"backend + external LLM","rep":1,"ms":9479.5736,"ok":true,"status":200,"err":null}
+{"endpoint":"resume-analyze","layer":"backend + external LLM","rep":2,"ms":25810.2374,"ok":true,"status":200,"err":null}
+{"endpoint":"resume-analyze","layer":"backend + external LLM","rep":3,"ms":21101.5053,"ok":true,"status":200,"err":null}
+{"endpoint":"resume-analyze","layer":"backend + external LLM","rep":4,"ms":111.8435,"ok":false,"status":413,"err":null}
+{"endpoint":"interview-turn (chat)","layer":"backend + external LLM","rep":0,"ms":611.6481,"ok":true,"status":200,"err":null}
+{"endpoint":"interview-turn (chat)","layer":"backend + external LLM","rep":1,"ms":632.5383,"ok":true,"status":200,"err":null}
+{"endpoint":"interview-turn (chat)","layer":"backend + external LLM","rep":2,"ms":832.0966,"ok":true,"status":200,"err":null}
+{"endpoint":"interview-turn (chat)","layer":"backend + external LLM","rep":3,"ms":627.7867,"ok":true,"status":200,"err":null}
+{"endpoint":"interview-turn (chat)","layer":"backend + external LLM","rep":4,"ms":838.5091,"ok":true,"status":200,"err":null}
+{"endpoint":"star-coach","layer":"backend + external LLM","rep":0,"ms":3476.1059,"ok":true,"status":200,"err":null}
+{"endpoint":"star-coach","layer":"backend + external LLM","rep":1,"ms":3081.5449,"ok":true,"status":200,"err":null}
+{"endpoint":"star-coach","layer":"backend + external LLM","rep":2,"ms":125.3239,"ok":false,"status":502,"err":null}
+{"endpoint":"star-coach","layer":"backend + external LLM","rep":3,"ms":110.3354,"ok":false,"status":502,"err":null}
+{"endpoint":"star-coach","layer":"backend + external LLM","rep":4,"ms":205.1913,"ok":false,"status":502,"err":null}
+{"endpoint":"code-execute (javascript)","layer":"backend sandbox only","rep":0,"ms":156.0223,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (javascript)","layer":"backend sandbox only","rep":1,"ms":160.4949,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (javascript)","layer":"backend sandbox only","rep":2,"ms":142.7436,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (javascript)","layer":"backend sandbox only","rep":3,"ms":152.1053,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (javascript)","layer":"backend sandbox only","rep":4,"ms":104.8825,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (python)","layer":"backend sandbox only","rep":0,"ms":109.88,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (python)","layer":"backend sandbox only","rep":1,"ms":113.0343,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (python)","layer":"backend sandbox only","rep":2,"ms":117.0081,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (python)","layer":"backend sandbox only","rep":3,"ms":115.1657,"ok":true,"status":200,"err":null}
+{"endpoint":"code-execute (python)","layer":"backend sandbox only","rep":4,"ms":112.8569,"ok":true,"status":200,"err":null}
+{"endpoint":"stt-token mint","layer":"backend + external ASR auth","rep":0,"ms":298.7956,"ok":true,"status":200,"err":null}
+{"endpoint":"stt-token mint","layer":"backend + external ASR auth","rep":1,"ms":314.0027,"ok":true,"status":200,"err":null}
+{"endpoint":"stt-token mint","layer":"backend + external ASR auth","rep":2,"ms":324.471,"ok":true,"status":200,"err":null}
+{"endpoint":"stt-token mint","layer":"backend + external ASR auth","rep":3,"ms":324.3652,"ok":true,"status":200,"err":null}
+{"endpoint":"stt-token mint","layer":"backend + external ASR auth","rep":4,"ms":293.7274,"ok":true,"status":200,"err":null}

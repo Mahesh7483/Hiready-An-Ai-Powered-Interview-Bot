@@ -172,7 +172,7 @@ const ResumeReport = () => {
     const saved = sessionStorage.getItem("resumeAnalysis");
     if (!saved) {
       toast.error("No resume analysis found. Please upload and analyze a resume first.");
-      navigate("/resume-analysis");
+      navigate("/practice/resume");
       return;
     }
     try {
@@ -180,7 +180,7 @@ const ResumeReport = () => {
       setReportData({ ...EMPTY_REPORT, ...JSON.parse(saved) });
     } catch {
       toast.error("Failed to load analysis data.");
-      navigate("/resume-analysis");
+      navigate("/practice/resume");
       return;
     }
     // Hydrate source text for AI tools from the saved analysis when missing
@@ -326,7 +326,7 @@ const ResumeReport = () => {
         {/* Header */}
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-4">
-            <Link to="/dashboard">
+            <Link to="/mastery">
               <Button variant="ghost" size="sm">
                 <ArrowLeft className="mr-2 w-4 h-4" />
                 Back to Dashboard
@@ -348,7 +348,7 @@ const ResumeReport = () => {
               <Download className="mr-2 w-4 h-4" />
               Export Report
             </Button>
-            <Link to="/resume-analysis">
+            <Link to="/practice/resume">
               <Button className="bg-gradient-primary hover:opacity-90 transition-opacity">
                 <FileText className="mr-2 w-4 h-4" />
                 Upload New Resume
@@ -1125,7 +1125,7 @@ const ResumeReport = () => {
         <div className="p-6 bg-gradient-hero rounded-lg border border-border">
           <h3 className="text-lg font-semibold text-foreground mb-4">Recommended Next Steps</h3>
           <div className="grid md:grid-cols-3 gap-4">
-            <Link to="/resume-analysis" className="block">
+            <Link to="/practice/resume" className="block">
               <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
                 <CardHeader>
                   <CardTitle className="text-sm">Update & Re-analyze</CardTitle>
@@ -1137,7 +1137,7 @@ const ResumeReport = () => {
                 </CardContent>
               </Card>
             </Link>
-            <Link to="/interview" className="block">
+            <Link to="/practice/interview" className="block">
               <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
                 <CardHeader>
                   <CardTitle className="text-sm">Practice Interview</CardTitle>

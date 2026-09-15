@@ -104,6 +104,8 @@ const codingQuestionRoutes = require('./routes/coding/questions');
 const { initCollab } = require('./services/collab');
 const assessmentRoutes = require('./routes/assessmentRoutes');
 const readinessRoutes = require('./routes/readinessRoutes');
+const hireRoutes = require('./routes/hire');
+const consentRoutes = require('./routes/consentRoutes');
 
 // 7. Use Routes
 app.use('/api/auth', authLimiter, authRoutes);
@@ -117,6 +119,8 @@ app.use('/api/code', apiLimiter, codingRoutes);
 app.use('/api/admin/coding-questions', apiLimiter, codingQuestionRoutes);
 app.use('/api/assessment', apiLimiter, assessmentRoutes);
 app.use('/api/readiness', apiLimiter, readinessRoutes);
+app.use('/api/hire', apiLimiter, hireRoutes);
+app.use('/api/consent', apiLimiter, consentRoutes);
 
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 

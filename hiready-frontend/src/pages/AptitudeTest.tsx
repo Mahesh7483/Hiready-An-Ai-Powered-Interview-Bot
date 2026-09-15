@@ -486,7 +486,7 @@ const AptitudeTest = ({
       }
 
       toast.success(isPractice ? "Practice session completed!" : "Test completed!");
-      navigate("/aptitude/result");
+      navigate("/practice/aptitude/result");
     } catch (error) {
       toast.error("Failed to submit. Please try again.");
       console.error(error);

@@ -1,0 +1,1216 @@
+{
+  "metadata": {
+    "generatedAt": "2026-09-09T11:14:43.104Z",
+    "benchmarkVersion": "1.2-isolated-fencing-per-round-12",
+    "executionMethod": "Live Express HTTP endpoints (Supertest) comparing Baseline Controller vs Contract Controller",
+    "repsPerCase": 3,
+    "researchQuestion": "Does the module-specific report contract detect cross-component integrity failures that a reasonable component-level validation approach misses?",
+    "arms": {
+      "arm1": "Schema / Type Validation Only (Syntactic Reference Point)",
+      "arm2": "Current Practical Baseline Controller (Standard Express checks without worker lease fencing)",
+      "arm3": "Existing Checks + Contract-Driven Invariants (Express Controller with Fenced Leases, Cascades, Bidirectional Invariants)"
+    }
+  },
+  "summaryMetrics": {
+    "totalCases": 12,
+    "controlCases": 3,
+    "faultCases": 9,
+    "repsPerCase": 3,
+    "performanceAnalysis": {
+      "ordinaryRequests": {
+        "casesEvaluated": 11,
+        "description": "Ordinary requests excluding the deliberate 500ms concurrency pause in RC-02",
+        "arm1MeanLatencyMs": 0.041,
+        "arm2MeanLatencyMs": 33.14,
+        "arm3MeanLatencyMs": 33.919,
+        "contractOverheadMs": 0.779,
+        "interpretation": "Isolates the true computational overhead of multi-tier contract checks (cascades, answerKey snapshot comparisons, CAS updates) under normal operational flow."
+      },
+      "recoveryScenarios": {
+        "casesEvaluated": 1,
+        "caseId": "RC-02",
+        "description": "Delayed worker lease expiration race scenario including intentional 500ms worker pause",
+        "arm1MeanLatencyMs": 0.002,
+        "arm2MeanLatencyMs": 545.745,
+        "arm3MeanLatencyMs": 538.188,
+        "interpretation": "Reflects worker pause duration + concurrent lease takeover + resumption attempt."
+      },
+      "overallBenchmark": {
+        "casesEvaluated": 12,
+        "arm1MeanLatencyMs": 0.038,
+        "arm2MeanLatencyMs": 75.857,
+        "arm3MeanLatencyMs": 75.941,
+        "contractOverheadMs": 0.084
+      }
+    },
+    "arm1": {
+      "controlsAccepted": 3,
+      "falseAlarms": 0,
+      "faultsDetected": 0,
+      "faultsMissed": 9,
+      "totalCasesEvaluated": 12,
+      "meanLatencyMs": 0.038,
+      "ordinaryMeanLatencyMs": 0.041
+    },
+    "arm2": {
+      "controlsAccepted": 3,
+      "falseAlarms": 0,
+      "faultsDetected": 8,
+      "faultsMissed": 1,
+      "totalCasesEvaluated": 12,
+      "meanLatencyMs": 75.857,
+      "ordinaryMeanLatencyMs": 33.14
+    },
+    "arm3": {
+      "controlsAccepted": 3,
+      "falseAlarms": 0,
+      "faultsDetected": 9,
+      "faultsMissed": 0,
+      "totalCasesEvaluated": 12,
+      "meanLatencyMs": 75.941,
+      "ordinaryMeanLatencyMs": 33.919
+    }
+  },
+  "caseResults": [
+    {
+      "caseId": "FF-01",
+      "name": "Valid Aptitude Submission",
+      "class": "fault_free",
+      "isControl": true,
+      "groundTruth": {
+        "defectDescription": "None (benign valid submission matching server-locked attempt)",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "ACCEPT",
+        "expectedHttpCode": 200,
+        "expectedDbPostCondition": "AptitudeAttempt.status === \"completed\" AND exactly 1 matching TestResult created",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "meanLatencyMs": 0.112,
+        "latenciesMs": [
+          0.294,
+          0.03,
+          0.012
+        ]
+      },
+      "arm2": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "meanLatencyMs": 37.179,
+        "latenciesMs": [
+          42.642,
+          35.726,
+          33.169
+        ]
+      },
+      "arm3": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 42.075,
+        "latenciesMs": [
+          41.486,
+          39.003,
+          45.736
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.294
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 42.642
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 41.486,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.03
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 35.726
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 39.003,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.012
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 33.169
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 45.736,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "FF-02",
+      "name": "Valid Session Deletion & Cascade",
+      "class": "fault_free",
+      "isControl": true,
+      "groundTruth": {
+        "defectDescription": "None (authorized session deletion with associated proctor logs)",
+        "intendedOperation": "DELETE /api/interviews/sessions/:id",
+        "expectedOutcome": "ACCEPT",
+        "expectedHttpCode": 200,
+        "expectedDbPostCondition": "InterviewSession and all associated ProctorLog records deleted",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "meanLatencyMs": 0.061,
+        "latenciesMs": [
+          0.156,
+          0.014,
+          0.014
+        ]
+      },
+      "arm2": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "meanLatencyMs": 14.79,
+        "latenciesMs": [
+          15.246,
+          14.452,
+          14.673
+        ]
+      },
+      "arm3": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 12.88,
+        "latenciesMs": [
+          12.34,
+          10.8,
+          15.501
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.156
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 15.246
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 12.34,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.014
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 14.452
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 10.8,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.014
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 14.673
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 15.501,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "FF-03",
+      "name": "Valid Sandboxed Code Execution",
+      "class": "fault_free",
+      "isControl": true,
+      "groundTruth": {
+        "defectDescription": "None (standard execution within resource boundaries)",
+        "intendedOperation": "POST /api/code/execute",
+        "expectedOutcome": "ACCEPT",
+        "expectedHttpCode": 200,
+        "expectedDbPostCondition": "Zero host contamination; clean execution result returned",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "meanLatencyMs": 0.062,
+        "latenciesMs": [
+          0.149,
+          0.021,
+          0.017
+        ]
+      },
+      "arm2": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "meanLatencyMs": 131.978,
+        "latenciesMs": [
+          140.563,
+          135.038,
+          120.333
+        ]
+      },
+      "arm3": {
+        "outcome": "ACCEPT",
+        "status": "accepted",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 129.107,
+        "latenciesMs": [
+          148.754,
+          126.792,
+          111.775
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.149
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 140.563
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 148.754,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.021
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 135.038
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 126.792,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.017
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 120.333
+          },
+          "arm3": {
+            "outcome": "ACCEPT",
+            "latencyMs": 111.775,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "CF-01",
+      "name": "Forged Grades (Client Score Injection)",
+      "class": "canonical_fault",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Client submits empty answers but asserts { score: 10, total: 10 } in payload",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "REJECT",
+        "expectedHttpCode": 400,
+        "expectedDbPostCondition": "Zero TestResult records created; Attempt status remains \"in_progress\"",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.035,
+        "latenciesMs": [
+          0.029,
+          0.045,
+          0.031
+        ]
+      },
+      "arm2": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "meanLatencyMs": 15.109,
+        "latenciesMs": [
+          17.585,
+          14.637,
+          13.106
+        ]
+      },
+      "arm3": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 14.994,
+        "latenciesMs": [
+          14.914,
+          17.239,
+          12.828
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.029
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 17.585
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 14.914,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.045
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 14.637
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 17.239,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.031
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 13.106
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 12.828,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "CF-02",
+      "name": "Mismatched Ownership (Cross-User Access)",
+      "class": "canonical_fault",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "User B attempts to grade or delete User A resource",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "REJECT",
+        "expectedHttpCode": 403,
+        "expectedDbPostCondition": "User A attempt unchanged; zero results saved by User B",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.071,
+        "latenciesMs": [
+          0.043,
+          0.142,
+          0.027
+        ]
+      },
+      "arm2": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "meanLatencyMs": 12.905,
+        "latenciesMs": [
+          16.556,
+          9.033,
+          13.127
+        ]
+      },
+      "arm3": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 10.532,
+        "latenciesMs": [
+          12.933,
+          8.936,
+          9.729
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.043
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 16.556
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 12.933,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.142
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 9.033
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 8.936,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.027
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 13.127
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 9.729,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "CF-03",
+      "name": "Configuration Tampering (Key Version Drift)",
+      "class": "canonical_fault",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Attempt locked with snapshot answerKey; payload evaluated with server snapshot vs mutated bank",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "DETECT",
+        "expectedHttpCode": 200,
+        "expectedDbPostCondition": "Score computed strictly using locked snapshot key, not mutated DB question",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.003,
+        "latenciesMs": [
+          0.004,
+          0.003,
+          0.001
+        ]
+      },
+      "arm2": {
+        "outcome": "DETECT",
+        "status": "detected",
+        "meanLatencyMs": 33.452,
+        "latenciesMs": [
+          34.848,
+          31.704,
+          33.803
+        ]
+      },
+      "arm3": {
+        "outcome": "DETECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 39.016,
+        "latenciesMs": [
+          39.888,
+          37.608,
+          39.552
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.004
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 34.848
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 39.888,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.003
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 31.704
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 37.608,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.001
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 33.803
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 39.552,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "CF-04",
+      "name": "Foreign / Duplicate Question ID Injection",
+      "class": "canonical_fault",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Payload contains foreign questionId or duplicate question IDs",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "REJECT",
+        "expectedHttpCode": 400,
+        "expectedDbPostCondition": "Zero TestResult records saved; attempt remains \"in_progress\"",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.032,
+        "latenciesMs": [
+          0.035,
+          0.041,
+          0.02
+        ]
+      },
+      "arm2": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "meanLatencyMs": 13.301,
+        "latenciesMs": [
+          13.827,
+          12.202,
+          13.874
+        ]
+      },
+      "arm3": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 14.892,
+        "latenciesMs": [
+          18.172,
+          13.8,
+          12.704
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.035
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 13.827
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 18.172,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.041
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 12.202
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 13.8,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.02
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 13.874
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 12.704,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "CF-05",
+      "name": "Incomplete Deletion (Orphaned Proctor Logs)",
+      "class": "canonical_fault",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Deleting interview session must cascade to purge sensitive proctor logs",
+        "intendedOperation": "DELETE /api/interviews/sessions/:id",
+        "expectedOutcome": "DETECT",
+        "expectedHttpCode": 200,
+        "expectedDbPostCondition": "ProctorLog.countDocuments === 0 (no orphaned webcam frames)",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.039,
+        "latenciesMs": [
+          0.022,
+          0.071,
+          0.024
+        ]
+      },
+      "arm2": {
+        "outcome": "DETECT",
+        "status": "detected",
+        "meanLatencyMs": 16.12,
+        "latenciesMs": [
+          17.092,
+          15.487,
+          15.782
+        ]
+      },
+      "arm3": {
+        "outcome": "DETECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 17.427,
+        "latenciesMs": [
+          18.755,
+          16.824,
+          16.703
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.022
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 17.092
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 18.755,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.071
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 15.487
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 16.824,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.024
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 15.782
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 16.703,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "CF-06",
+      "name": "Interrupted Submission Write Failure",
+      "class": "canonical_fault",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Transient DB failure on completion write during submission",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "REJECT",
+        "expectedHttpCode": 500,
+        "expectedDbPostCondition": "Rollback cleans up: zero orphaned TestResults, status reverted to \"in_progress\"",
+        "recoveryPolicy": "Request-triggered retry reconciliation"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.002,
+        "latenciesMs": [
+          0.003,
+          0.002,
+          0.002
+        ]
+      },
+      "arm2": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "meanLatencyMs": 37.417,
+        "latenciesMs": [
+          37.332,
+          39.198,
+          35.72
+        ]
+      },
+      "arm3": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 44.124,
+        "latenciesMs": [
+          46.414,
+          46.875,
+          39.082
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.003
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 37.332
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 46.414,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.002
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 39.198
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 46.875,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.002
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 35.72
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 39.082,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "RC-01",
+      "name": "Stale / Expired Attempt Submission",
+      "class": "regression_case",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Valid payload structure, but attempt timestamp exceeds server expiration deadline",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "REJECT",
+        "expectedHttpCode": 400,
+        "expectedDbPostCondition": "Attempt rejected as expired; zero TestResults saved",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.002,
+        "latenciesMs": [
+          0.003,
+          0.002,
+          0.002
+        ]
+      },
+      "arm2": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "meanLatencyMs": 11.709,
+        "latenciesMs": [
+          11.999,
+          12.984,
+          10.142
+        ]
+      },
+      "arm3": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 9.175,
+        "latenciesMs": [
+          9.429,
+          8.047,
+          10.049
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.003
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 11.999
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 9.429,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.002
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 12.984
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 8.047,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.002
+          },
+          "arm2": {
+            "outcome": "REJECT",
+            "latencyMs": 10.142
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 10.049,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "RC-02",
+      "name": "Delayed Worker Resuming After Lease Expiry",
+      "class": "regression_case",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Worker A pauses > lease timeout; Worker B takes over; Worker A resumes and attempts commit",
+        "intendedOperation": "POST /api/questions/quiz/save-result (Worker A resumption)",
+        "expectedOutcome": "REJECT",
+        "expectedHttpCode": 409,
+        "expectedDbPostCondition": "Worker A rejected via lease fencing; Worker B result intact; attempt status \"completed\"",
+        "recoveryPolicy": "Fencing token invalidation"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.002,
+        "latenciesMs": [
+          0.002,
+          0.002,
+          0.003
+        ]
+      },
+      "arm2": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 545.745,
+        "latenciesMs": [
+          542.813,
+          547.707,
+          546.716
+        ]
+      },
+      "arm3": {
+        "outcome": "REJECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 538.188,
+        "latenciesMs": [
+          536.783,
+          540.736,
+          537.045
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.002
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 542.813
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 536.783,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.002
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 547.707
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 540.736,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.003
+          },
+          "arm2": {
+            "outcome": "ACCEPT",
+            "latencyMs": 546.716
+          },
+          "arm3": {
+            "outcome": "REJECT",
+            "latencyMs": 537.045,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    },
+    {
+      "caseId": "RC-03",
+      "name": "Omitted Answer Denominator Manipulation",
+      "class": "regression_case",
+      "isControl": false,
+      "groundTruth": {
+        "defectDescription": "Submitting 2 of 10 answers claiming total=2 to artificially inflate percentage to 100%",
+        "intendedOperation": "POST /api/questions/quiz/save-result",
+        "expectedOutcome": "DETECT",
+        "expectedHttpCode": 200,
+        "expectedDbPostCondition": "Percentage calculated strictly as 2/10 = 20%, NOT 2/2 = 100%",
+        "recoveryPolicy": "N/A"
+      },
+      "arm1": {
+        "outcome": "ACCEPT",
+        "status": "missed",
+        "meanLatencyMs": 0.03,
+        "latenciesMs": [
+          0.045,
+          0.031,
+          0.015
+        ]
+      },
+      "arm2": {
+        "outcome": "DETECT",
+        "status": "detected",
+        "meanLatencyMs": 40.584,
+        "latenciesMs": [
+          49.48,
+          34.935,
+          37.338
+        ]
+      },
+      "arm3": {
+        "outcome": "DETECT",
+        "status": "detected",
+        "dbPostConditionSatisfied": true,
+        "meanLatencyMs": 38.884,
+        "latenciesMs": [
+          45.655,
+          37.13,
+          33.868
+        ]
+      },
+      "rounds": [
+        {
+          "round": 1,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.045
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 49.48
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 45.655,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 2,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.031
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 34.935
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 37.13,
+            "dbPostConditionSatisfied": true
+          }
+        },
+        {
+          "round": 3,
+          "arm1": {
+            "outcome": "ACCEPT",
+            "latencyMs": 0.015
+          },
+          "arm2": {
+            "outcome": "DETECT",
+            "latencyMs": 37.338
+          },
+          "arm3": {
+            "outcome": "DETECT",
+            "latencyMs": 33.868,
+            "dbPostConditionSatisfied": true
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -57,13 +57,13 @@ const AssessmentPipeline = () => {
       const data = await assessmentAPI.current();
       if (!data.attempt) {
         toast.info("No assessment in progress");
-        navigate("/assessments");
+        navigate("/practice/assessment");
         return;
       }
       setAttempt(data.attempt);
     } catch {
       toast.error("Failed to load assessment");
-      navigate("/assessments");
+      navigate("/practice/assessment");
     }
   }, [navigate]);
 
@@ -394,7 +394,7 @@ const AssessmentPipeline = () => {
               </p>
             </CardContent>
           </Card>
-          <Button className="w-full" onClick={() => navigate("/dashboard")}>Back to Dashboard</Button>
+          <Button className="w-full" onClick={() => navigate("/mastery")}>Back to Dashboard</Button>
         </div>
       </DashboardLayout>
     );
@@ -470,7 +470,7 @@ const AssessmentPipeline = () => {
               size="sm"
               className="text-muted-foreground hover:text-destructive"
               onClick={() => {
-                if (window.confirm("Leave this assessment? Your attempt is saved and you can resume it later from the Assessments page.")) navigate("/assessments");
+                if (window.confirm("Leave this assessment? Your attempt is saved and you can resume it later from the Assessments page.")) navigate("/practice/assessment");
               }}
             >
               <ArrowLeft className="w-4 h-4 mr-1" />

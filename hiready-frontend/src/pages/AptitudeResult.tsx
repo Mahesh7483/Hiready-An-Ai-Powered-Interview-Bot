@@ -49,7 +49,7 @@ const AptitudeResult = () => {
         });
       }
     } else {
-      navigate("/aptitude");
+      navigate("/practice/aptitude");
     }
   }, [navigate]);
 
@@ -353,7 +353,7 @@ const AptitudeResult = () => {
 
         {/* Action Buttons */}
         <div className="flex gap-4 justify-center">
-          <Button onClick={() => navigate("/dashboard")} variant="outline" className="px-8">
+          <Button onClick={() => navigate("/mastery")} variant="outline" className="px-8">
             <Home className="w-4 h-4 mr-2" />
             Back to Dashboard
           </Button>
@@ -361,7 +361,7 @@ const AptitudeResult = () => {
           <Button
             onClick={() => {
               sessionStorage.removeItem("aptitudeTestResult");
-              navigate(isPractice ? "/aptitude/practice" : "/aptitude/test");
+              navigate(isPractice ? "/practice/aptitude/practice" : "/practice/aptitude/run");
             }}
             className={`text-white px-8 ${isPractice ? "bg-emerald-500 hover:bg-emerald-600" : "bg-gradient-primary hover:opacity-90"}`}
           >
@@ -369,7 +369,7 @@ const AptitudeResult = () => {
           </Button>
 
           <Button
-            onClick={() => navigate("/aptitude/dashboard")}
+            onClick={() => navigate("/practice/aptitude/stats")}
             variant="outline"
             className="px-8"
           >

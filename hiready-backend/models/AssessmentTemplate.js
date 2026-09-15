@@ -44,6 +44,19 @@ const assessmentTemplateSchema = new mongoose.Schema(
     title: { type: String, required: true, trim: true, maxlength: 150 },
     description: { type: String, default: '', maxlength: 1000 },
     targetRole: { type: String, default: '', maxlength: 120 },
+
+    // Owning employer, or null for a platform-wide template.
+    //
+    // null  — today's behaviour: visible to every student in Practice.
+    // set   — that company's private hiring instrument. It must never appear
+    //         in a student's Practice library, and no other company may read
+    //         it. Every recruiter-facing template query filters on this.
+    companyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Company',
+      default: null,
+      index: true,
+    },
     sections: {
       type: [assessmentSectionSchema],
       validate: [(v) => v.length >= 1 && v.length <= 8, '1-8 sections required'],

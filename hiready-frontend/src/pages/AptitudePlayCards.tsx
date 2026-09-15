@@ -26,7 +26,7 @@ const AptitudePlayCards = () => {
       icon: <BookOpen className="w-7 h-7" />,
       gradient: "from-emerald-500 to-teal-600",
       iconBg: "bg-emerald-500/10 text-emerald-500",
-      path: "/aptitude/practice",
+      path: "/practice/aptitude/practice",
       features: [
         "No proctoring or webcam",
         "Choose topic & difficulty",
@@ -41,7 +41,7 @@ const AptitudePlayCards = () => {
       icon: <ShieldCheck className="w-7 h-7" />,
       gradient: "from-violet-500 to-purple-600",
       iconBg: "bg-violet-500/10 text-violet-500",
-      path: "/aptitude/test",
+      path: "/practice/aptitude/run",
       features: [
         "Full proctoring (webcam + face detection)",
         "Strict timer enforcement",
@@ -56,7 +56,7 @@ const AptitudePlayCards = () => {
       icon: <BarChart3 className="w-7 h-7" />,
       gradient: "from-amber-500 to-orange-600",
       iconBg: "bg-amber-500/10 text-amber-500",
-      path: "/aptitude/dashboard",
+      path: "/practice/aptitude/stats",
       features: [
         "Score trends over time",
         "Topic-wise performance",
@@ -129,7 +129,7 @@ const AptitudePlayCards = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 mt-8 max-w-2xl mx-auto">
           <Card
             className="border border-border shadow-md hover:shadow-lg transition-all cursor-pointer group"
-            onClick={() => navigate("/aptitude/notebook")}
+            onClick={() => navigate("/mastery/review")}
           >
             <CardHeader className="pb-2">
               <div className="w-11 h-11 rounded-xl bg-destructive/10 text-destructive flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">
@@ -143,7 +143,7 @@ const AptitudePlayCards = () => {
           </Card>
           <Card
             className="border border-border shadow-md hover:shadow-lg transition-all cursor-pointer group"
-            onClick={() => navigate("/leaderboard")}
+            onClick={() => navigate("/practice/leaderboard")}
           >
             <CardHeader className="pb-2">
               <div className="w-11 h-11 rounded-xl bg-amber-500/10 text-amber-500 flex items-center justify-center mb-3 group-hover:scale-110 transition-transform">

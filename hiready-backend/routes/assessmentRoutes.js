@@ -4,6 +4,7 @@ const router = express.Router();
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 const AssessmentTemplate = require('../models/AssessmentTemplate');
 const AssessmentAttempt = require('../models/AssessmentAttempt');
+const { stampVerdict } = require('../services/integrity');
 const Question = require('../models/Question');
 const CodingQuestion = require('../models/CodingQuestion');
 
@@ -197,7 +198,13 @@ function attemptForClient(attempt, template) {
 
 router.get('/templates', async (req, res) => {
   try {
-    const templates = await AssessmentTemplate.find({ isPublished: true }).sort({ createdAt: -1 }).lean();
+    // companyId: null is load-bearing. A template owned by a company is that
+    // company's private hiring instrument and must never surface in a
+    // student's Practice library — candidates reach those only through an
+    // invite, never by browsing.
+    const templates = await AssessmentTemplate.find({ isPublished: true, companyId: null })
+      .sort({ createdAt: -1 })
+      .lean();
     res.json({ templates });
   } catch {
     res.status(500).json({ error: 'Failed to load templates' });
@@ -320,6 +327,15 @@ async function advanceOrFinish(attempt, template, sectionResult) {
   if (nextIdx >= template.sections.length) {
     attempt.status = 'completed';
     attempt.completedAt = new Date();
+    // Stamp the verdict HERE, at the one place a normal completion happens.
+    // It was previously stamped only on the abnormal exits — expiry, auto
+    // submission, violation — so an attempt finished honestly ended with
+    // integrityVerdict null. services/hire/readers.js maps null to 'unknown',
+    // which the scorecard renders as "Not evaluated", so the only integrity
+    // signal a recruiter ever gets would have been absent on exactly the
+    // attempts that earned a clean one. Invisible until now only because no
+    // attempt could reach this line at all.
+    stampVerdict(attempt, template && template.violationThreshold);
     return;
   }
   const brk = findBreakAfter(template, attempt.currentSectionIndex);
@@ -434,6 +450,7 @@ router.get('/attempt/current', async (req, res) => {
       const deadline = new Date(attempt.sectionStartedAt.getTime() + section.minutes * 60000 + 60000);
       if (new Date() > deadline) {
         attempt.status = 'auto_submitted';
+      stampVerdict(attempt, template && template.violationThreshold);
         attempt.completedAt = new Date();
         await AssessmentAttempt.updateOne({ _id: attempt._id }, { $set: { status: attempt.status, completedAt: attempt.completedAt } });
         return res.json({ attempt: attemptForClient(attempt, template), expired: true });
@@ -466,6 +483,7 @@ router.post('/attempt/:id/section/:idx/submit', async (req, res) => {
       const deadline = new Date(attempt.sectionStartedAt.getTime() + section.minutes * 60000 + 60000);
       if (new Date() > deadline) {
         attempt.status = 'auto_submitted';
+      stampVerdict(attempt, template && template.violationThreshold);
         attempt.completedAt = new Date();
         await attempt.save();
         return res.status(400).json({ error: 'Section time expired — the attempt has been closed' });
@@ -600,13 +618,25 @@ router.post('/attempt/:id/face-check', async (req, res) => {
     const raw = typeof req.body.snapshot === 'string' ? req.body.snapshot : '';
     const snapshot = raw.startsWith('data:image') ? raw.slice(0, 80000) : null;
     const ProctorLog = require('../models/ProctorLog');
-    await ProctorLog.create({
-      sessionId: `assessment-${attempt._id}`,
+    const ProctorSnapshot = require('../models/ProctorSnapshot');
+    const sessionId = `assessment-${attempt._id}`;
+    const capturedAt = new Date();
+    const logEntry = await ProctorLog.create({
+      sessionId,
       userId: String(attempt.userId),
       event: `section_face_check_s${attempt.currentSectionIndex}`,
-      timestamp: new Date(),
-      ...(snapshot ? { snapshot } : {}),
+      timestamp: capturedAt,
     });
+    // The frame goes to its own collection, never onto the log row.
+    if (snapshot) {
+      await ProctorSnapshot.create({
+        sessionId,
+        userId: String(attempt.userId),
+        proctorLogId: logEntry._id,
+        image: snapshot,
+        capturedAt,
+      });
+    }
     res.json({ ok: true, sectionIndex: attempt.currentSectionIndex, withSnapshot: Boolean(snapshot) });
   } catch (err) {
     console.error('Face check error:', err.message);
@@ -629,6 +659,7 @@ router.post('/attempt/:id/violation', async (req, res) => {
     let autoSubmitted = false;
     if (attempt.violationScore >= (template.violationThreshold || 100)) {
       attempt.status = 'auto_submitted';
+      stampVerdict(attempt, template && template.violationThreshold);
       attempt.completedAt = new Date();
       autoSubmitted = true;
     }

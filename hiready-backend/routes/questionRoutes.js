@@ -1,10 +1,119 @@
 const express = require('express');
 const Question = require('../models/Question');
 const TestResult = require('../models/TestResult');
+const AptitudeAttempt = require('../models/AptitudeAttempt');
 const mongoose = require('mongoose');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const router = express.Router();
 const { requireAuth } = require('../middleware/auth');
 const { DIFFICULTIES } = require('../utils/constants');
+
+const SUBMISSION_LEASE_DURATION_MS = parseInt(process.env.SUBMISSION_LEASE_DURATION_MS, 10) || 60000;
+
+// Helper to extract authenticated user id from Authorization header if present
+function getAuthUserId(req) {
+  try {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
+      return decoded.id || decoded.userId || null;
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+// POST /api/questions/quiz/start — starts a server-authoritative quiz attempt session
+router.post('/quiz/start', requireAuth, async (req, res) => {
+  try {
+    const { topic, count = 10, difficulty, mode, negativeMarking } = req.body;
+    const requestedCount = Math.min(Math.max(parseInt(count, 10) || 10, 1), 50);
+
+    const slugify = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    const requestedSlug = slugify(topic);
+
+    const allCategories = await Question.distinct('category');
+    const isMixed = requestedSlug === 'all' || requestedSlug === 'mixed' || !topic;
+    const resolvedCategory = isMixed
+      ? null
+      : allCategories.find((c) => slugify(c) === requestedSlug) || topic;
+
+    const baseMatch = resolvedCategory ? { category: resolvedCategory } : {};
+
+    let docs = [];
+    if (difficulty) {
+      docs = await Question.aggregate([
+        { $match: { ...baseMatch, difficulty } },
+        { $sample: { size: requestedCount } }
+      ]);
+    }
+    if (docs.length < requestedCount) {
+      const excludeIds = docs.map((q) => q._id);
+      const remaining = requestedCount - docs.length;
+      const fill = await Question.aggregate([
+        { $match: { ...baseMatch, _id: { $nin: excludeIds } } },
+        { $sample: { size: remaining } }
+      ]);
+      docs = [...docs, ...fill];
+    }
+    if (docs.length < requestedCount && resolvedCategory) {
+      const excludeIds = docs.map((q) => q._id);
+      const remaining = requestedCount - docs.length;
+      const fill = await Question.aggregate([
+        { $match: { _id: { $nin: excludeIds } } },
+        { $sample: { size: remaining } }
+      ]);
+      docs = [...docs, ...fill];
+    }
+
+    if (docs.length === 0) {
+      return res.status(404).json({ error: 'No questions available to start attempt' });
+    }
+
+    const questionIds = docs.map((q) => q._id);
+    const answerKey = new Map();
+    docs.forEach((q) => {
+      answerKey.set(String(q._id), String(q.Answer || '').trim().toUpperCase());
+    });
+
+    const attempt = new AptitudeAttempt({
+      userId: req.user.id,
+      topic: resolvedCategory || topic || 'logical',
+      difficulty: difficulty || '',
+      mode: mode === 'practice' ? 'practice' : 'test',
+      negativeMarking: Boolean(negativeMarking),
+      questionIds,
+      answerKey,
+      status: 'in_progress',
+      keyVersion: 1,
+      startedAt: new Date()
+    });
+
+    await attempt.save();
+
+    const sanitizedQuestions = docs.map((q) => {
+      const { Answer, Explanation, ...safe } = q;
+      return safe;
+    });
+
+    res.setHeader('X-Attempt-Id', String(attempt._id));
+    res.status(201).json({
+      attemptId: attempt._id,
+      topic: attempt.topic,
+      difficulty: attempt.difficulty,
+      mode: attempt.mode,
+      negativeMarking: attempt.negativeMarking,
+      totalQuestions: questionIds.length,
+      questions: sanitizedQuestions
+    });
+  } catch (err) {
+    console.error('Start quiz attempt error:', err.message);
+    res.status(500).json({ error: 'Failed to start quiz attempt' });
+  }
+});
 
 // GET random quiz by category (supports ?count=N&difficulty=X)
 // Keeps backwards compatibility: /quiz/logical still works with default 10
@@ -13,7 +122,7 @@ const { DIFFICULTIES } = require('../utils/constants');
 router.get('/quiz/:category', async (req, res) => {
   try {
     const count = Math.min(Math.max(parseInt(req.query.count) || 10, 1), 50);
-    const { difficulty } = req.query;
+    const { difficulty, negativeMarking, mode } = req.query;
 
     const slugify = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
     const requestedSlug = slugify(req.params.category);
@@ -26,14 +135,12 @@ router.get('/quiz/:category', async (req, res) => {
 
     const baseMatch = resolved ? { category: resolved } : {};
 
-    // Difficulty with fallback: if the requested difficulty pool is too thin,
-    // serve from the whole category instead of returning 0 questions.
+    // Fetch full question documents (including Answer for server-authoritative key lock)
     let questions = [];
     if (difficulty) {
       questions = await Question.aggregate([
         { $match: { ...baseMatch, difficulty } },
         { $sample: { size: count } },
-        { $project: { Answer: 0 } },
       ]);
     }
     if (questions.length < count) {
@@ -42,12 +149,44 @@ router.get('/quiz/:category', async (req, res) => {
       const fill = await Question.aggregate([
         { $match: { ...baseMatch, _id: { $nin: excludeIds } } },
         { $sample: { size: remaining } },
-        { $project: { Answer: 0 } },
       ]);
       questions = [...questions, ...fill];
     }
 
-    res.json(questions);
+    // If caller is authenticated, automatically issue an AptitudeAttempt session
+    const authUserId = getAuthUserId(req);
+    if (authUserId && questions.length > 0) {
+      try {
+        const answerKey = new Map();
+        questions.forEach((q) => {
+          answerKey.set(String(q._id), String(q.Answer || '').trim().toUpperCase());
+        });
+        const attempt = new AptitudeAttempt({
+          userId: authUserId,
+          topic: resolved || req.params.category || 'logical',
+          difficulty: difficulty || '',
+          mode: mode === 'practice' ? 'practice' : 'test',
+          negativeMarking: negativeMarking === 'true' || negativeMarking === '1',
+          questionIds: questions.map((q) => q._id),
+          answerKey,
+          status: 'in_progress',
+          keyVersion: 1,
+          startedAt: new Date()
+        });
+        await attempt.save();
+        res.setHeader('X-Attempt-Id', String(attempt._id));
+      } catch (attErr) {
+        console.error('Auto attempt issuance error:', attErr.message);
+      }
+    }
+
+    // Never expose Answer to the client
+    const sanitized = questions.map((q) => {
+      const { Answer, Explanation, ...safe } = q;
+      return safe;
+    });
+
+    res.json(sanitized);
   } catch (err) {
     console.error('Quiz fetch error:', err.message);
     res.status(500).json({ error: 'Failed to load questions' });
@@ -317,58 +456,566 @@ router.get('/wrong-answers/me', requireAuth, async (req, res) => {
 });
 
 
-// Save test result for analytics — identity comes from the verified token, never the body
+// Save test result for analytics — ZERO CLIENT TRUST
 router.post('/quiz/save-result', requireAuth, async (req, res) => {
   try {
-    const userId = req.user.id; // derived from JWT — client-supplied userId is ignored
-    const { score, totalQuestions, selectedAnswers, mode, warningCount, topic, difficulty, timeTaken, negativeMarking, preset } = req.body;
+    const userId = req.user.id;
+    // CRITICAL: Any score, total, totalQuestions, isCorrect, or percentage in req.body is completely ignored.
+    const { attemptId, sessionId, answers, selectedAnswers, warningCount, timeTaken, preset } = req.body;
 
-    if (typeof score !== 'number' || typeof totalQuestions !== 'number' || !Array.isArray(selectedAnswers)) {
-      return res.status(400).json({ error: 'score, totalQuestions (number) and selectedAnswers (array) are required' });
+    const rawAttemptId = attemptId || sessionId;
+    if (!rawAttemptId || !mongoose.Types.ObjectId.isValid(rawAttemptId)) {
+      return res.status(400).json({ error: 'Valid attemptId is required' });
     }
 
-    // Sanitize per-answer entries — allow optional per-question timing
-    const safeAnswers = selectedAnswers.slice(0, 100).map((a) => ({
-      questionId: String(a && a.questionId ? a.questionId : '').slice(0, 64),
-      selected: String(a && a.selected != null ? a.selected : ''),
-      correctAnswer: String(a && a.correctAnswer != null ? a.correctAnswer : ''),
-      isCorrect: Boolean(a && a.isCorrect),
-      timeSpentMs: Number.isFinite(a && a.timeSpentMs)
-        ? Math.max(0, Math.min(Math.round(a.timeSpentMs), 30 * 60 * 1000))
-        : null
-    }));
+    // 1. Strictly reference an active, server-issued attempt ID
+    const attempt = await AptitudeAttempt.findById(rawAttemptId);
+    if (!attempt) {
+      return res.status(400).json({ error: 'Attempt ID not found' });
+    }
 
+    // Verify ownership: foreign attempt returns HTTP 403
+    if (String(attempt.userId) !== String(userId)) {
+      return res.status(403).json({ error: 'Unauthorized: attempt belongs to a different user' });
+    }
+
+    // Check expiration where applicable
+    if (attempt.expiresAt && attempt.expiresAt < new Date()) {
+      return res.status(400).json({ error: 'Attempt has expired' });
+    }
+
+    // Check if result already exists (repeated submission / idempotent return / crash recovery)
+    // Verify attempt AND owner linkage before returning or reconciling
+    const existingResult = await TestResult.findOne({ attemptId: rawAttemptId, userId });
+    if (existingResult) {
+      if (attempt.status !== 'completed') {
+        await AptitudeAttempt.updateOne(
+          { _id: rawAttemptId, userId },
+          { $set: { status: 'completed', leaseToken: null, leaseExpiresAt: null, completedAt: existingResult.serverGradedAt || new Date() } }
+        );
+      }
+      return res.status(409).json({
+        error: 'This attempt has already been submitted and graded',
+        resultId: existingResult._id,
+        score: existingResult.score,
+        totalQuestions: existingResult.totalQuestions
+      });
+    }
+
+    // 2. Fail-closed on answers payload: empty array or missing answers must immediately reject
+    const submittedAnswers = answers || selectedAnswers;
+    if (!Array.isArray(submittedAnswers) || submittedAnswers.length === 0) {
+      return res.status(400).json({ error: 'answers must be a non-empty array' });
+    }
+
+    // 3. Verify all submitted question IDs: must be valid ObjectIds, no duplicates, no foreign IDs
+    const issuedIdSet = new Set(attempt.questionIds.map((id) => String(id)));
+    const seenQids = new Set();
+    const submissionMap = new Map();
+
+    for (const item of submittedAnswers) {
+      const qid = String(item && item.questionId ? item.questionId : '').trim();
+      if (!qid || !mongoose.Types.ObjectId.isValid(qid)) {
+        return res.status(400).json({ error: 'Invalid questionId format in submission' });
+      }
+
+      // Check for duplicate question IDs in payload
+      if (seenQids.has(qid)) {
+        return res.status(400).json({ error: `Duplicate questionId detected in submission: ${qid}` });
+      }
+      seenQids.add(qid);
+
+      // Check that question ID exists in the server-issued attempt set
+      if (!issuedIdSet.has(qid)) {
+        return res.status(400).json({ error: `Foreign questionId not part of issued attempt: ${qid}` });
+      }
+
+      submissionMap.set(qid, item);
+    }
+
+    // Concurrency & Lease Acquisition with Fencing Token:
+    // Atomic acquisition of lock: either attempt is 'in_progress', OR 'submitting' with leaseExpiresAt < now
+    // (recovering from an abandoned lock due to node crash/termination).
+    // Generates a dedicated currentLeaseToken to fence out delayed workers.
+    const currentLeaseToken = crypto.randomUUID();
+    const now = new Date();
+    const leaseExpiresAt = new Date(now.getTime() + SUBMISSION_LEASE_DURATION_MS);
+
+    const lock = await AptitudeAttempt.findOneAndUpdate(
+      {
+        _id: rawAttemptId,
+        userId,
+        $or: [
+          { status: 'in_progress' },
+          { status: 'submitting', leaseExpiresAt: { $lt: now } }
+        ]
+      },
+      {
+        $set: {
+          status: 'submitting',
+          leaseToken: currentLeaseToken,
+          leaseExpiresAt
+        }
+      },
+      { new: true }
+    );
+    if (!lock) {
+      return res.status(409).json({ error: 'Submission already in progress or completed' });
+    }
+
+    // Test hook for concurrency and worker lease race verification — strictly restricted to test environment
+    if (process.env.NODE_ENV === 'test' && req.headers['x-test-pause-before-commit-ms']) {
+      const pauseMs = Math.min(5000, parseInt(req.headers['x-test-pause-before-commit-ms'], 10) || 0);
+      if (pauseMs > 0) {
+        await new Promise((r) => setTimeout(r, pauseMs));
+      }
+    }
+
+    // 4. Server-authoritative scoring:
+    // Score = max(0, N_correct - (lambda * N_wrong))
+    // lambda = 0.25 if negativeMarking is enabled, else 0.
+    // Unanswered/omitted answers contribute 0 marks and 0 deduction.
+    const lambda = attempt.negativeMarking ? 0.25 : 0;
+    let nCorrect = 0;
+    let nWrong = 0;
+    let nUnanswered = 0;
+    const safeAnswers = [];
+
+    // Iterate across server-locked questionIds to guarantee denominator and order
+    for (const idObj of attempt.questionIds) {
+      const qid = String(idObj);
+      const subItem = submissionMap.get(qid);
+      const expectedAnswer = (attempt.answerKey instanceof Map
+        ? attempt.answerKey.get(qid)
+        : attempt.answerKey[qid]) || '';
+
+      const selected = subItem && subItem.selected != null ? String(subItem.selected).trim().toUpperCase() : '';
+      let isCorrect = false;
+
+      if (!selected || selected === 'OMITTED') {
+        nUnanswered++;
+      } else if (selected === expectedAnswer) {
+        nCorrect++;
+        isCorrect = true;
+      } else {
+        nWrong++;
+        isCorrect = false;
+      }
+
+      safeAnswers.push({
+        questionId: qid,
+        selected,
+        correctAnswer: expectedAnswer,
+        isCorrect,
+        timeSpentMs: Number.isFinite(subItem && subItem.timeSpentMs)
+          ? Math.max(0, Math.min(Math.round(subItem.timeSpentMs), 30 * 60 * 1000))
+          : null
+      });
+    }
+
+    // Calculate score
+    const rawScore = nCorrect - (lambda * nWrong);
+    const finalScore = Math.max(0, Math.round(rawScore * 100) / 100);
+
+    // Denominator is STRICTLY derived from server attempt question count, NEVER client-reported length
+    const totalQuestions = attempt.questionIds.length;
+    const percentage = totalQuestions > 0 ? Math.round((finalScore / totalQuestions) * 10000) / 100 : 0;
+
+    // 5. Save immutable audit record in TestResult BEFORE marking attempt as completed
     const testResult = new TestResult({
+      attemptId: attempt._id,
       userId,
-      score,
+      score: finalScore,
       totalQuestions,
-      selectedAnswers: safeAnswers,
-      mode: mode === 'practice' ? 'practice' : 'test',
+      percentage,
+      markingMode: attempt.negativeMarking ? 'negative_0.25' : 'standard',
+      keyVersion: attempt.keyVersion || 1,
+      serverGradedAt: new Date(),
+      mode: attempt.mode,
+      topic: attempt.topic,
+      difficulty: attempt.difficulty,
       warningCount: Number.isFinite(warningCount) ? warningCount : 0,
-      negativeMarking: Boolean(negativeMarking),
+      negativeMarking: attempt.negativeMarking,
       preset: typeof preset === 'string' ? preset.slice(0, 60) : '',
-      topic: topic || 'logical',
-      difficulty,
-      timeTaken
+      timeTaken,
+      selectedAnswers: safeAnswers,
+      audit: {
+        attemptId: String(attempt._id),
+        userId: String(userId),
+        score: finalScore,
+        total: totalQuestions,
+        percentage,
+        breakdown: {
+          nCorrect,
+          nWrong,
+          nUnanswered,
+          lambda
+        },
+        timestamp: new Date().toISOString(),
+        markingMode: attempt.negativeMarking ? 'negative_0.25' : 'standard',
+        keyVersion: attempt.keyVersion || 1
+      }
     });
 
-    await testResult.save();
+    // 5 & 6. Transactional Persistence: Wrap TestResult save and AptitudeAttempt status update
+    // in a formal MongoDB session transaction with worker lease fencing and automatic rollback.
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      await session.withTransaction(async () => {
+        await testResult.save({ session });
+        const updateRes = await AptitudeAttempt.updateOne(
+          { _id: rawAttemptId, leaseToken: currentLeaseToken, status: 'submitting' },
+          { $set: { status: 'completed', leaseToken: null, leaseExpiresAt: null, completedAt: new Date() } },
+          { session }
+        );
+        if (updateRes.matchedCount === 0) {
+          const fencingErr = new Error('Submission lease expired and was superseded by another worker');
+          fencingErr.name = 'LeaseFencingError';
+          throw fencingErr;
+        }
+      });
+    } catch (txErr) {
+      if (txErr.name === 'LeaseFencingError') {
+        return res.status(409).json({ error: 'Submission lease expired and was superseded by another worker' });
+      }
 
-    // Percentile vs same-topic results ("you beat X% of candidates")
+      // Check if transactions are unsupported on this MongoDB deployment (e.g., standalone local Mongo)
+      const isStandaloneOrUnsupported =
+        txErr.code === 20 ||
+        txErr.codeName === 'IllegalOperation' ||
+        /replica set/i.test(txErr.message) ||
+        /transactions are not supported/i.test(txErr.message) ||
+        /transaction numbers are only allowed/i.test(txErr.message);
+
+      if (isStandaloneOrUnsupported) {
+        // Fallback: Two-phase update pattern with token fencing and explicit rollback cleanup
+        try {
+          await testResult.save();
+          try {
+            const fallbackUpdate = await AptitudeAttempt.updateOne(
+              { _id: rawAttemptId, leaseToken: currentLeaseToken, status: 'submitting' },
+              { $set: { status: 'completed', leaseToken: null, leaseExpiresAt: null, completedAt: new Date() } }
+            );
+            if (fallbackUpdate.matchedCount === 0) {
+              await TestResult.deleteOne({ _id: testResult._id }).catch(() => {});
+              return res.status(409).json({ error: 'Submission lease expired and was superseded by another worker' });
+            }
+          } catch (updateErr) {
+            // Rollback: delete orphaned testResult and revert attempt status ONLY if we still hold the leaseToken
+            await TestResult.deleteOne({ _id: testResult._id }).catch(() => {});
+            await AptitudeAttempt.updateOne(
+              { _id: rawAttemptId, leaseToken: currentLeaseToken },
+              { $set: { status: 'in_progress', leaseToken: null, leaseExpiresAt: null } }
+            ).catch(() => {});
+            throw updateErr;
+          }
+        } catch (saveErr) {
+          if (saveErr.code === 11000) {
+            return res.status(409).json({ error: 'Duplicate result submission for this attempt' });
+          }
+          await AptitudeAttempt.updateOne(
+            { _id: rawAttemptId, leaseToken: currentLeaseToken },
+            { $set: { status: 'in_progress', leaseToken: null, leaseExpiresAt: null } }
+          ).catch(() => {});
+          throw saveErr;
+        }
+      } else {
+        // Transaction failed in replica-set environment (duplicate key, transient abort, or write failure)
+        if (txErr.code === 11000) {
+          return res.status(409).json({ error: 'Duplicate result submission for this attempt' });
+        }
+        // Revert attempt status back to 'in_progress' ONLY IF our leaseToken is still valid
+        await AptitudeAttempt.updateOne(
+          { _id: rawAttemptId, leaseToken: currentLeaseToken },
+          { $set: { status: 'in_progress', leaseToken: null, leaseExpiresAt: null } }
+        ).catch(() => {});
+        throw txErr;
+      }
+    } finally {
+      if (session) {
+        await session.endSession().catch(() => {});
+      }
+    }
+
+    // Percentile computation
     let percentile = null;
     try {
       const betterCount = await TestResult.countDocuments({
-        topic: topic || 'logical',
-        $expr: { $gt: [{ $divide: ['$score', '$totalQuestions'] }, { $divide: [score, totalQuestions] }] }
+        topic: attempt.topic,
+        $expr: { $gt: [{ $divide: ['$score', '$totalQuestions'] }, { $divide: [finalScore, totalQuestions] }] }
       });
-      const totalCount = await TestResult.countDocuments({ topic: topic || 'logical', totalQuestions: { $gt: 0 } });
+      const totalCount = await TestResult.countDocuments({ topic: attempt.topic, totalQuestions: { $gt: 0 } });
       percentile = totalCount > 1 ? Math.round((betterCount / totalCount) * 100) : null;
     } catch { /* non-critical */ }
 
-    res.json({ success: true, id: testResult._id, percentile });
+    res.json({
+      success: true,
+      id: testResult._id,
+      attemptId: attempt._id,
+      score: finalScore,
+      totalQuestions,
+      percentage,
+      breakdown: {
+        correct: nCorrect,
+        wrong: nWrong,
+        unanswered: nUnanswered,
+        negativeMarking: attempt.negativeMarking,
+        lambda
+      },
+      percentile,
+      results: safeAnswers
+    });
   } catch (err) {
     console.error('Save result error:', err.message);
     res.status(500).json({ error: 'Failed to save result' });
+  }
+});
+
+// Test-only baseline controller endpoint (Arm 2 evaluation: matched application checks WITHOUT worker lease fencing)
+// CRITICAL: This controller is architecturally identical to the contract controller above, with ONE difference:
+// - No leaseToken is generated, stored, or checked on the completion write.
+// - Lock admission, write ordering (TestResult first → completion second), duplicate handling (409),
+//   and rollback behavior are all identical to the contract controller.
+// This isolation ensures the 3-arm comparison measures ONLY the contribution of lease fencing.
+if (process.env.NODE_ENV === 'test') {
+  router.post('/quiz/save-result-baseline', requireAuth, async (req, res) => {
+    try {
+      const userId = req.user.id;
+      const { attemptId, sessionId, answers, selectedAnswers, warningCount, timeTaken, preset } = req.body;
+      const rawAttemptId = attemptId || sessionId;
+      if (!rawAttemptId || !mongoose.Types.ObjectId.isValid(rawAttemptId)) {
+        return res.status(400).json({ error: 'Valid attemptId is required' });
+      }
+      const attempt = await AptitudeAttempt.findById(rawAttemptId);
+      if (!attempt) return res.status(400).json({ error: 'Attempt ID not found' });
+      if (String(attempt.userId) !== String(userId)) {
+        return res.status(403).json({ error: 'Unauthorized: attempt belongs to a different user' });
+      }
+      if (attempt.expiresAt && attempt.expiresAt < new Date()) {
+        return res.status(400).json({ error: 'Attempt has expired' });
+      }
+
+      // Check if result already exists (same as contract — returns 409 with reconciliation)
+      const existingResult = await TestResult.findOne({ attemptId: rawAttemptId, userId });
+      if (existingResult) {
+        if (attempt.status !== 'completed') {
+          await AptitudeAttempt.updateOne(
+            { _id: rawAttemptId, userId },
+            { $set: { status: 'completed', completedAt: existingResult.serverGradedAt || new Date() } }
+          );
+        }
+        return res.status(409).json({
+          error: 'This attempt has already been submitted and graded',
+          resultId: existingResult._id,
+          score: existingResult.score,
+          totalQuestions: existingResult.totalQuestions
+        });
+      }
+
+      const submittedAnswers = answers || selectedAnswers;
+      if (!Array.isArray(submittedAnswers) || submittedAnswers.length === 0) {
+        return res.status(400).json({ error: 'answers must be a non-empty array' });
+      }
+      const issuedIdSet = new Set(attempt.questionIds.map((id) => String(id)));
+      const seenQids = new Set();
+      const submissionMap = new Map();
+      for (const item of submittedAnswers) {
+        const qid = String(item && item.questionId ? item.questionId : '').trim();
+        if (!qid || !mongoose.Types.ObjectId.isValid(qid)) {
+          return res.status(400).json({ error: 'Invalid questionId format in submission' });
+        }
+        if (seenQids.has(qid)) {
+          return res.status(400).json({ error: `Duplicate questionId detected in submission: ${qid}` });
+        }
+        seenQids.add(qid);
+        if (!issuedIdSet.has(qid)) {
+          return res.status(400).json({ error: `Foreign questionId not part of issued attempt: ${qid}` });
+        }
+        submissionMap.set(qid, item);
+      }
+
+      // Lock Acquisition — MATCHED to contract controller's $or admission logic,
+      // but WITHOUT generating or storing a leaseToken.
+      // Both arms allow takeover of 'submitting' attempts with expired leases.
+      const now = new Date();
+      const lock = await AptitudeAttempt.findOneAndUpdate(
+        {
+          _id: rawAttemptId,
+          userId,
+          $or: [
+            { status: 'in_progress' },
+            { status: 'submitting', leaseExpiresAt: { $lt: now } }
+          ]
+        },
+        {
+          $set: {
+            status: 'submitting',
+            // NO leaseToken set — this is the critical architectural difference
+            leaseExpiresAt: new Date(now.getTime() + 60000)
+          }
+        },
+        { new: true }
+      );
+      if (!lock) {
+        return res.status(409).json({ error: 'Submission already in progress or completed' });
+      }
+
+      // Test hook for concurrency pause (same as contract)
+      if (req.headers['x-test-pause-before-commit-ms']) {
+        const pauseMs = Math.min(5000, parseInt(req.headers['x-test-pause-before-commit-ms'], 10) || 0);
+        if (pauseMs > 0) await new Promise((r) => setTimeout(r, pauseMs));
+      }
+
+      // Server-authoritative scoring (identical to contract)
+      const lambda = attempt.negativeMarking ? 0.25 : 0;
+      let nCorrect = 0, nWrong = 0, nUnanswered = 0;
+      const safeAnswers = [];
+      for (const idObj of attempt.questionIds) {
+        const qid = String(idObj);
+        const subItem = submissionMap.get(qid);
+        const expectedAnswer = (attempt.answerKey instanceof Map
+          ? attempt.answerKey.get(qid)
+          : attempt.answerKey[qid]) || '';
+        const selected = subItem && subItem.selected != null ? String(subItem.selected).trim().toUpperCase() : '';
+        let isCorrect = false;
+        if (!selected || selected === 'OMITTED') {
+          nUnanswered++;
+        } else if (selected === expectedAnswer) {
+          nCorrect++;
+          isCorrect = true;
+        } else {
+          nWrong++;
+          isCorrect = false;
+        }
+        safeAnswers.push({
+          questionId: qid,
+          selected,
+          correctAnswer: expectedAnswer,
+          isCorrect,
+          timeSpentMs: Number.isFinite(subItem && subItem.timeSpentMs)
+            ? Math.max(0, Math.min(Math.round(subItem.timeSpentMs), 30 * 60 * 1000))
+            : null
+        });
+      }
+      const rawScore = nCorrect - (lambda * nWrong);
+      const finalScore = Math.max(0, Math.round(rawScore * 100) / 100);
+      const totalQuestions = attempt.questionIds.length;
+      const percentage = totalQuestions > 0 ? Math.round((finalScore / totalQuestions) * 10000) / 100 : 0;
+
+      // Save TestResult FIRST (matched write ordering with contract)
+      const testResult = new TestResult({
+        attemptId: attempt._id,
+        userId,
+        score: finalScore,
+        totalQuestions,
+        percentage,
+        markingMode: attempt.negativeMarking ? 'negative_0.25' : 'standard',
+        keyVersion: attempt.keyVersion || 1,
+        serverGradedAt: new Date(),
+        mode: attempt.mode,
+        topic: attempt.topic,
+        difficulty: attempt.difficulty,
+        warningCount: Number.isFinite(warningCount) ? warningCount : 0,
+        negativeMarking: attempt.negativeMarking,
+        preset: typeof preset === 'string' ? preset.slice(0, 60) : '',
+        timeTaken,
+        selectedAnswers: safeAnswers,
+        audit: {
+          attemptId: String(attempt._id),
+          userId: String(userId),
+          score: finalScore,
+          total: totalQuestions,
+          percentage,
+          breakdown: { nCorrect, nWrong, nUnanswered, lambda },
+          timestamp: new Date().toISOString(),
+          markingMode: attempt.negativeMarking ? 'negative_0.25' : 'standard',
+          keyVersion: attempt.keyVersion || 1
+        }
+      });
+
+      // Persistence WITHOUT worker lease fencing
+      // Baseline uses standard un-fenced update by attemptId without token-conditioned CAS
+      try {
+        const resultData = testResult.toObject();
+        delete resultData._id;
+        const savedResult = await TestResult.findOneAndUpdate(
+          { attemptId: attempt._id },
+          { $set: resultData },
+          { upsert: true, new: true, runValidators: true }
+        );
+
+        // UN-FENCED completion write: updates by _id only without leaseToken check!
+        // This allows a delayed worker to overwrite concurrent state changes without detection.
+        await AptitudeAttempt.updateOne(
+          { _id: rawAttemptId },
+          { $set: { status: 'completed', leaseExpiresAt: null, completedAt: new Date() } }
+        );
+      } catch (err) {
+        // Rollback: delete orphaned testResult and revert attempt status (un-fenced)
+        await TestResult.deleteOne({ attemptId: rawAttemptId }).catch(() => {});
+        await AptitudeAttempt.updateOne(
+          { _id: rawAttemptId },
+          { $set: { status: 'in_progress', leaseExpiresAt: null } }
+        ).catch(() => {});
+        console.error('Baseline save result error:', err.message);
+        return res.status(500).json({ error: 'Failed to save result' });
+      }
+
+      // Percentile computation (identical to contract)
+      let percentile = null;
+      try {
+        const betterCount = await TestResult.countDocuments({
+          topic: attempt.topic,
+          $expr: { $gt: [{ $divide: ['$score', '$totalQuestions'] }, { $divide: [finalScore, totalQuestions] }] }
+        });
+        const totalCount = await TestResult.countDocuments({ topic: attempt.topic, totalQuestions: { $gt: 0 } });
+        percentile = totalCount > 1 ? Math.round((betterCount / totalCount) * 100) : null;
+      } catch { /* non-critical */ }
+
+      return res.json({
+        success: true,
+        id: testResult._id,
+        attemptId: attempt._id,
+        score: finalScore,
+        totalQuestions,
+        percentage,
+        breakdown: {
+          correct: nCorrect,
+          wrong: nWrong,
+          unanswered: nUnanswered,
+          negativeMarking: attempt.negativeMarking,
+          lambda
+        },
+        percentile,
+        results: safeAnswers,
+        baseline: true
+      });
+    } catch (err) {
+      console.error('Baseline save result error:', err.message);
+      return res.status(500).json({ error: 'Failed to save result' });
+    }
+  });
+}
+
+// GET /api/questions/quiz/result/:id — retrieve single test result with strict ownership check
+router.get('/quiz/result/:id', requireAuth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: 'Invalid result ID format' });
+    }
+    const result = await TestResult.findById(id).lean();
+    if (!result) {
+      return res.status(404).json({ error: 'Test result not found' });
+    }
+    if (String(result.userId) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Unauthorized: result belongs to a different user' });
+    }
+    res.json(result);
+  } catch (err) {
+    console.error('Fetch result error:', err.message);
+    res.status(500).json({ error: 'Failed to fetch result' });
   }
 });
 

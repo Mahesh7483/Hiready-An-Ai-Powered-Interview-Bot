@@ -40,7 +40,7 @@ export const AdminRoute = ({ children }: { children: React.ReactNode }) => {
             You don't have permission to view the admin panel. Ask an existing admin to grant you
             access.
           </p>
-          <Link to="/dashboard">
+          <Link to="/mastery">
             <Button variant="outline" className="mt-6">
               Back to Dashboard
             </Button>

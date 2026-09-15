@@ -47,7 +47,7 @@ const Signup = () => {
       }
       if (response.user) {
         localStorage.setItem("user", JSON.stringify(response.user));
-        navigate("/dashboard");
+        navigate("/mastery");
       } else {
         // Fallback: no session returned — ask the user to log in
         navigate("/login");
@@ -66,7 +66,7 @@ const Signup = () => {
     try {
       const userData = await signInWithGoogle();
       toast.success(`Welcome, ${userData.displayName || "User"}!`);
-      navigate("/dashboard");
+      navigate("/mastery");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";
       toast.error(message || "Failed to sign up with Google");

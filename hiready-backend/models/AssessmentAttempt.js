@@ -33,7 +33,20 @@ const assessmentAttemptSchema = new mongoose.Schema(
     sectionResults: [
       {
         sectionIndex: Number,
-        type: String,
+        /**
+         * MUST stay wrapped as `{ type: String }`.
+         *
+         * Mongoose's typeKey is 'type', so a bare `type: String` here makes it
+         * read this whole object as a TYPE DECLARATION rather than a
+         * subdocument definition — sectionResults compiles to [String], and
+         * pushing a result object throws a CastError at the push. That is not
+         * a subtle degradation: POST /attempt/:id/section/submit caught it and
+         * returned 500 'Failed to submit section', so no assessment could ever
+         * be completed and no scorecard ever had anything on it.
+         *
+         * `violations` below is written the same way for the same reason.
+         */
+        type: { type: String },
         score: { type: Number, default: 0 },
         maxScore: { type: Number, default: 0 },
         meta: { type: mongoose.Schema.Types.Mixed, default: {} },
@@ -48,6 +61,21 @@ const assessmentAttemptSchema = new mongoose.Schema(
       },
     ],
     violationScore: { type: Number, default: 0 },
+
+    /**
+     * Derived at finalisation from violationScore. This is the ONLY integrity
+     * signal a recruiter ever sees: it lives on the result they commissioned,
+     * so /hire needs no path to ProctorLog at all.
+     *
+     *   clean       nothing of note
+     *   flagged     violations occurred; the score is usable with judgement
+     *   invalidated the attempt was auto-submitted on the threshold
+     */
+    integrityVerdict: {
+      type: String,
+      enum: ['clean', 'flagged', 'invalidated', null],
+      default: null,
+    },
     startedAt: { type: Date, default: Date.now },
     completedAt: { type: Date, default: null },
   },

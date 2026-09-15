@@ -1,7 +1,16 @@
-﻿const express = require('express');
+const express = require('express');
 const mongoose = require('mongoose');
 const InterviewSession = require('../models/InterviewSession');
+const ProctorSnapshot = require('../models/ProctorSnapshot');
+const ProctorLog = require('../models/ProctorLog');
 const { requireAuth } = require('../middleware/auth');
+
+/** Cast guard: an unguarded `new ObjectId(...)` throws on a malformed id. */
+function toObjectId(id) {
+  return mongoose.Types.ObjectId.isValid(String(id))
+    ? new mongoose.Types.ObjectId(String(id))
+    : null;
+}
 
 const router = express.Router();
 router.use(requireAuth);
@@ -85,7 +94,7 @@ router.get('/sessions/summary', async (req, res) => {
     since.setDate(since.getDate() - 30);
 
     const [totals] = await InterviewSession.aggregate([
-      { $match: { user: new mongoose.Types.ObjectId(req.user.id) } },
+      { $match: { user: toObjectId(req.user.id) } },
       {
         $group: {
           _id: null,
@@ -208,15 +217,110 @@ router.get('/sessions/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/interviews/sessions/:id
+// Helper for transactional or explicit parallel cascading deletion
+async function executeCascadeDeletion(sessionDoc, userId) {
+  const proctorQuery = {
+    $or: [
+      { sessionId: sessionDoc.sessionId },
+      { sessionId: String(sessionDoc._id) }
+    ],
+    userId: userId
+  };
+
+  // Try replica-set transaction first
+  let dbSession = null;
+  try {
+    const topologyType = mongoose.connection.client?.topology?.description?.type || '';
+    const isReplicaSet = topologyType.includes('ReplicaSet') || topologyType.includes('Sharded');
+
+    if (isReplicaSet) {
+      dbSession = await mongoose.startSession();
+      dbSession.startTransaction();
+
+      const sessionOpts = { session: dbSession };
+      const proctorResult = await ProctorLog.deleteMany(proctorQuery, sessionOpts);
+      // Webcam frames. Phase A split these out of ProctorLog into their own
+      // collection and this path was never updated, so deleting a session left
+      // the student's images behind for the rest of their 90-day TTL — while
+      // the response said 'Deleted'.
+      const snapshotResult = await ProctorSnapshot.deleteMany(proctorQuery, sessionOpts);
+      await InterviewSession.deleteOne({ _id: sessionDoc._id }, sessionOpts);
+
+      await dbSession.commitTransaction();
+      return {
+        success: true,
+        deletedSessionId: sessionDoc.sessionId,
+        purgedLogsCount: proctorResult.deletedCount || 0,
+        purgedSnapshotsCount: snapshotResult.deletedCount || 0
+      };
+    }
+  } catch (txErr) {
+    if (dbSession) {
+      // Already aborted, or the connection went away — either way there is
+      // nothing left to roll back and the fallback below still runs.
+      try { await dbSession.abortTransaction(); } catch { /* nothing to abort */ }
+    }
+    // Transaction not supported on standalone local Mongo; fall through to parallel cleanup
+  } finally {
+    if (dbSession) {
+      try { dbSession.endSession(); } catch { /* already ended */ }
+    }
+  }
+
+  // Explicit parallel cleanup, for a standalone mongod with no transactions.
+  // Must stay in step with the transactional branch above — including the
+  // biometric frames, which are a separate collection since Phase A.
+  const [proctorResult, snapshotResult] = await Promise.all([
+    ProctorLog.deleteMany(proctorQuery),
+    ProctorSnapshot.deleteMany(proctorQuery),
+    InterviewSession.deleteOne({ _id: sessionDoc._id })
+  ]);
+
+  return {
+    success: true,
+    deletedSessionId: sessionDoc.sessionId,
+    purgedLogsCount: proctorResult.deletedCount || 0,
+    purgedSnapshotsCount: snapshotResult.deletedCount || 0
+  };
+}
+
+// DELETE /api/interviews/sessions/:id — cascade purge with ownership check
 router.delete('/sessions/:id', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'Invalid id' });
   try {
-    const deleted = await InterviewSession.findOneAndDelete({ _id: req.params.id, user: req.user.id });
-    if (!deleted) return res.status(404).json({ error: 'Not found' });
-    res.json({ message: 'Deleted' });
+    const session = await InterviewSession.findById(req.params.id);
+    if (!session) return res.status(404).json({ error: 'Interview session not found' });
+
+    // Strict ownership verification
+    if (String(session.user) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden: You do not have permission to delete this session' });
+    }
+
+    const result = await executeCascadeDeletion(session, req.user.id);
+    res.json({ message: 'Deleted', ...result });
   } catch (err) {
     console.error('Delete interview session error:', err.message);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// DELETE /api/interviews/sessions/by-session-id/:sessionId — cascade purge by string sessionId
+router.delete('/sessions/by-session-id/:sessionId', async (req, res) => {
+  const { sessionId } = req.params;
+  if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
+  try {
+    const session = await InterviewSession.findOne({ sessionId });
+    if (!session) return res.status(404).json({ error: 'Interview session not found' });
+
+    // Strict ownership verification
+    if (String(session.user) !== String(req.user.id)) {
+      return res.status(403).json({ error: 'Forbidden: You do not have permission to delete this session' });
+    }
+
+    const result = await executeCascadeDeletion(session, req.user.id);
+    res.json({ message: 'Deleted', ...result });
+  } catch (err) {
+    console.error('Delete interview session by sessionId error:', err.message);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

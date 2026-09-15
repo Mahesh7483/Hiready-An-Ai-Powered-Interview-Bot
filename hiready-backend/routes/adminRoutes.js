@@ -5,6 +5,10 @@ const User = require('../models/User');
 const Question = require('../models/Question');
 const TestResult = require('../models/TestResult');
 const ProctorLog = require('../models/ProctorLog');
+const ProctorSnapshot = require('../models/ProctorSnapshot');
+const CandidateCompanyConsent = require('../models/CandidateCompanyConsent');
+const Application = require('../models/Application');
+const CompanyMembership = require('../models/CompanyMembership');
 const { requireAdmin } = require('../middleware/auth');
 const AuditLog = require('../models/AuditLog');
 const Announcement = require('../models/Announcement');
@@ -13,6 +17,7 @@ const ResumeAnalysis = require('../models/ResumeAnalysis');
 const AssessmentAttempt = require('../models/AssessmentAttempt');
 const CodingSubmission = require('../models/CodingSubmission');
 const SavedQuestion = require('../models/SavedQuestion');
+const AptitudeAttempt = require('../models/AptitudeAttempt');
 
 // Every route below requires a valid JWT AND the admin role (fresh DB check)
 router.use(requireAdmin);
@@ -375,18 +380,51 @@ router.delete('/users/:id', async (req, res) => {
       return res.status(400).json({ error: 'Demote this admin before deleting' });
     }
 
-    await Promise.all([
-      User.deleteOne({ _id: req.params.id }),
-      TestResult.deleteMany({ userId: req.params.id }),
-      ProctorLog.deleteMany({ userId: req.params.id }),
-      InterviewSession.deleteMany({ user: req.params.id }),
-      ResumeAnalysis.deleteMany({ user: req.params.id }),
-      AssessmentAttempt.deleteMany({ userId: req.params.id }),
-      CodingSubmission.deleteMany({ userId: req.params.id }),
-      SavedQuestion.deleteMany({ userId: req.params.id }),
-    ]);
+    const id = req.params.id;
 
-    res.json({ message: 'User and associated data deleted' });
+    // Every collection holding a reference to this person.
+    //
+    // DisclosureAudit is deliberately ABSENT: it records who saw this
+    // candidate's data and under what consent, and it must outlive both the
+    // consent and the account or it cannot answer that question later. Do not
+    // add it here.
+    const cascade = {
+      user: () => User.deleteOne({ _id: id }),
+      testResults: () => TestResult.deleteMany({ userId: id }),
+      proctorLogs: () => ProctorLog.deleteMany({ userId: id }),
+      // Biometric webcam frames. Missing from this cascade until now, so images
+      // outlived the deleted account for the remainder of their 90-day TTL —
+      // in a collection whose own header calls it a DPDP/GDPR boundary.
+      proctorSnapshots: () => ProctorSnapshot.deleteMany({ userId: id }),
+      interviewSessions: () => InterviewSession.deleteMany({ user: id }),
+      resumeAnalyses: () => ResumeAnalysis.deleteMany({ user: id }),
+      assessmentAttempts: () => AssessmentAttempt.deleteMany({ userId: id }),
+      codingSubmissions: () => CodingSubmission.deleteMany({ userId: id }),
+      savedQuestions: () => SavedQuestion.deleteMany({ userId: id }),
+      // Arrived with the Practice/Mastery merge, which is exactly how a new
+      // user-owned collection slips past a hand-maintained cascade. The guard
+      // in __tests__/userIdIntegrity.test.js now derives this list from the
+      // models rather than trusting anyone to remember.
+      aptitudeAttempts: () => AptitudeAttempt.deleteMany({ userId: id }),
+      // Hiring-side references: a deleted candidate must not keep live consents,
+      // applications, memberships or pending invites.
+      consents: () => CandidateCompanyConsent.deleteMany({ candidateId: id }),
+      applications: () => Application.deleteMany({ candidateId: id }),
+      memberships: () => CompanyMembership.deleteMany({ userId: id }),
+    };
+
+    const entries = Object.entries(cascade);
+    const settled = await Promise.all(entries.map(([, run]) => run()));
+    const deleted = Object.fromEntries(
+      entries.map(([name], i) => [name, settled[i].deletedCount ?? 0])
+    );
+
+    // Reported rather than assumed. This route previously returned success
+    // unconditionally, which is how a cascade that matched zero rows — because
+    // the ids were string-typed and the filter cast them — looked like it had
+    // worked for months.
+    logAdminAction(req, 'user.delete', 'User:' + id, deleted);
+    res.json({ message: 'User and associated data deleted', deleted });
   } catch (err) {
     console.error('Admin delete user error:', err.message);
     res.status(500).json({ error: 'Failed to delete user' });
@@ -673,6 +711,15 @@ router.get('/proctor-logs', async (req, res) => {
       .lean();
     const userMap = new Map(users.map((u) => [String(u._id), { name: u.name, email: u.email }]));
 
+    // Which of these events still have a frame. Asked as a separate id-only
+    // query so the list never loads image data it does not render — and so a
+    // frame that has passed its TTL simply reports false.
+    const framed = new Set(
+      (await ProctorSnapshot.find({ proctorLogId: { $in: logs.map((l) => l._id) } })
+        .select('proctorLogId')
+        .lean()).map((f) => String(f.proctorLogId))
+    );
+
     res.json({
       page,
       pages: Math.max(Math.ceil(total / limit), 1),
@@ -684,7 +731,7 @@ router.get('/proctor-logs', async (req, res) => {
         sessionId: l.sessionId,
         timestamp: l.timestamp,
         receivedAt: l.receivedAt,
-        hasSnapshot: Boolean(l.snapshot),
+        hasSnapshot: framed.has(String(l._id)),
         user: l.userId ? userMap.get(l.userId) || null : null
       }))
     });
@@ -694,15 +741,23 @@ router.get('/proctor-logs', async (req, res) => {
   }
 });
 
-// GET /api/admin/proctor-logs/:id/snapshot — evidence thumbnail for one log
+// GET /api/admin/proctor-logs/:id/snapshot — evidence frame for one log.
+//
+// Reads ProctorSnapshot, not ProctorLog: the image no longer lives on the log
+// row. This endpoint is admin-only and RESTRICTED in policy/dataAccess.js —
+// no recruiter-facing code may reach it or the model behind it.
 router.get('/proctor-logs/:id/snapshot', async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
       return res.status(400).json({ error: 'Invalid id' });
     }
-    const log = await ProctorLog.findById(req.params.id).select('snapshot').lean();
-    if (!log || !log.snapshot) return res.status(404).json({ error: 'No snapshot' });
-    res.json({ snapshot: log.snapshot });
+    const frame = await ProctorSnapshot.findOne({ proctorLogId: req.params.id })
+      .select('image')
+      .lean();
+    // Absent is normal, not an error: frames expire on their TTL while the
+    // event they belonged to is retained.
+    if (!frame || !frame.image) return res.status(404).json({ error: 'No snapshot' });
+    res.json({ snapshot: frame.image });
   } catch (err) {
     console.error('Snapshot fetch error:', err.message);
     res.status(500).json({ error: 'Failed to load snapshot' });
@@ -748,5 +803,541 @@ router.get('/interview-sessions', async (req, res) => {
   }
 });
 
-module.exports = router;
+// ─────────────────────────────────────────────────────────────────────────────
+//  Phase D — companies and the disclosure audit.
+//
+//  Approval is the switch that lets an employer exist at all: a company signs
+//  up as `pending` and nothing works until an admin activates it. Suspension
+//  is the reverse, and it bites on the suspended company's next request
+//  because middleware/company.js re-reads status every time.
+// ─────────────────────────────────────────────────────────────────────────────
 
+const Company = require('../models/Company');
+const DisclosureAudit = require('../models/DisclosureAudit');
+const Job = require('../models/Job');
+
+// GET /api/admin/companies
+router.get('/companies', async (req, res) => {
+  try {
+    const { page, limit, skip } = clampPage(req);
+    const filter = {};
+    if (['pending', 'active', 'suspended'].includes(req.query.status)) {
+      filter.status = req.query.status;
+    }
+    if (req.query.search) {
+      filter.name = new RegExp(escapeRegex(req.query.search), 'i');
+    }
+
+    const [companies, total] = await Promise.all([
+      Company.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      Company.countDocuments(filter),
+    ]);
+
+    const ids = companies.map((c) => c._id);
+    const [members, jobs] = await Promise.all([
+      CompanyMembership.aggregate([
+        { $match: { companyId: { $in: ids }, status: 'active' } },
+        { $group: { _id: '$companyId', n: { $sum: 1 } } },
+      ]),
+      Job.aggregate([
+        { $match: { companyId: { $in: ids } } },
+        { $group: { _id: '$companyId', n: { $sum: 1 } } },
+      ]),
+    ]);
+    const memberMap = new Map(members.map((m) => [String(m._id), m.n]));
+    const jobMap = new Map(jobs.map((j) => [String(j._id), j.n]));
+
+    res.json({
+      page,
+      pages: Math.max(Math.ceil(total / limit), 1),
+      total,
+      companies: companies.map((c) => ({
+        ...c,
+        membersActive: memberMap.get(String(c._id)) || 0,
+        jobs: jobMap.get(String(c._id)) || 0,
+        seatsUsed: memberMap.get(String(c._id)) || 0,
+      })),
+    });
+  } catch (err) {
+    console.error('Admin companies error:', err.message);
+    res.status(500).json({ error: 'Failed to load companies' });
+  }
+});
+
+// POST /api/admin/companies — create a tenant directly (the seed path)
+router.post('/companies', async (req, res) => {
+  try {
+    const { name, domain = '', seats = 3, status = 'pending' } = req.body;
+    if (!name || typeof name !== 'string') {
+      return res.status(400).json({ error: 'name is required' });
+    }
+    const company = await Company.create({
+      name: name.trim().slice(0, 150),
+      domain: String(domain).trim().toLowerCase().slice(0, 120),
+      seats: Math.min(Math.max(parseInt(seats, 10) || 3, 1), 500),
+      status: ['pending', 'active', 'suspended'].includes(status) ? status : 'pending',
+      createdBy: req.user.id,
+    });
+    logAdminAction(req, 'company.create', 'Company:' + company._id, { name: company.name });
+    res.status(201).json(company);
+  } catch (err) {
+    console.error('Admin company create error:', err.message);
+    res.status(500).json({ error: 'Failed to create company' });
+  }
+});
+
+// GET /api/admin/companies/:id
+router.get('/companies/:id', async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return res.status(400).json({ error: 'Invalid id' });
+    }
+    const company = await Company.findById(req.params.id).lean();
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+
+    const [memberships, jobs, applications, consents] = await Promise.all([
+      CompanyMembership.find({ companyId: company._id }).lean(),
+      Job.countDocuments({ companyId: company._id }),
+      Application.countDocuments({ companyId: company._id }),
+      CandidateCompanyConsent.countDocuments({
+        companyId: company._id,
+        state: { $in: ['REVEALED', 'IN_PROCESS'] },
+        revokedAt: null,
+      }),
+    ]);
+
+    const userIds = memberships.map((m) => m.userId);
+    const users = await User.find({ _id: { $in: userIds } }).select('name email').lean();
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+    res.json({
+      company,
+      members: memberships.map((m) => ({
+        membershipId: m._id,
+        userId: m.userId,
+        name: (userMap.get(String(m.userId)) || {}).name || null,
+        email: (userMap.get(String(m.userId)) || {}).email || null,
+        role: m.role,
+        status: m.status,
+      })),
+      counts: { jobs, applications, candidatesWithAccess: consents },
+    });
+  } catch (err) {
+    console.error('Admin company detail error:', err.message);
+    res.status(500).json({ error: 'Failed to load company' });
+  }
+});
+
+// PUT /api/admin/companies/:id/status — approve, suspend, reinstate
+router.put('/companies/:id/status', async (req, res) => {
+  try {
+    const { status } = req.body;
+    if (!['pending', 'active', 'suspended'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
+    const company = await Company.findByIdAndUpdate(
+      req.params.id,
+      { $set: { status } },
+      { new: true }
+    ).lean();
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+
+    // Nothing else to do: middleware/company.js re-reads status on every
+    // request, so suspension takes effect on the company's very next call.
+    logAdminAction(req, 'company.status', 'Company:' + req.params.id, { status });
+    res.json(company);
+  } catch (err) {
+    console.error('Admin company status error:', err.message);
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// PUT /api/admin/companies/:id/seats
+router.put('/companies/:id/seats', async (req, res) => {
+  try {
+    const seats = Math.min(Math.max(parseInt(req.body.seats, 10) || 0, 1), 500);
+    const company = await Company.findByIdAndUpdate(
+      req.params.id,
+      { $set: { seats } },
+      { new: true }
+    ).lean();
+    if (!company) return res.status(404).json({ error: 'Company not found' });
+    logAdminAction(req, 'company.seats', 'Company:' + req.params.id, { seats });
+    res.json(company);
+  } catch (err) {
+    console.error('Admin seats error:', err.message);
+    res.status(500).json({ error: 'Failed to update seats' });
+  }
+});
+
+/**
+ * GET /api/admin/disclosure
+ *
+ * Who was disclosed, to which company, what was disclosed, when, and under
+ * which consent. This is not an activity log — a login trail tells you someone
+ * was busy; this tells you whose personal data left the platform and on what
+ * authority. It is the answer to "who has seen my results?".
+ */
+router.get('/disclosure', async (req, res) => {
+  try {
+    const { page, limit, skip } = clampPage(req);
+    const filter = {};
+    if (req.query.candidateId && mongoose.Types.ObjectId.isValid(req.query.candidateId)) {
+      filter.candidateId = req.query.candidateId;
+    }
+    if (req.query.companyId && mongoose.Types.ObjectId.isValid(req.query.companyId)) {
+      filter.companyId = req.query.companyId;
+    }
+    if (['granted', 'revoked', 'state_changed', 'disclosed'].includes(req.query.action)) {
+      filter.action = req.query.action;
+    }
+
+    const [rows, total] = await Promise.all([
+      DisclosureAudit.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      DisclosureAudit.countDocuments(filter),
+    ]);
+
+    const candidateIds = [...new Set(rows.map((r) => String(r.candidateId)))];
+    const companyIds = [...new Set(rows.map((r) => String(r.companyId)))];
+    const [users, companies] = await Promise.all([
+      User.find({ _id: { $in: candidateIds } }).select('name email').lean(),
+      Company.find({ _id: { $in: companyIds } }).select('name').lean(),
+    ]);
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+    const companyMap = new Map(companies.map((c) => [String(c._id), c]));
+
+    res.json({
+      page,
+      pages: Math.max(Math.ceil(total / limit), 1),
+      total,
+      events: rows.map((r) => ({
+        id: r._id,
+        action: r.action,
+        scopes: r.scopes || [],
+        at: r.createdAt,
+        candidate: userMap.get(String(r.candidateId))
+          ? {
+            id: r.candidateId,
+            name: userMap.get(String(r.candidateId)).name,
+            email: userMap.get(String(r.candidateId)).email,
+          }
+          : { id: r.candidateId, name: null, email: null },
+        company: companyMap.get(String(r.companyId))
+          ? { id: r.companyId, name: companyMap.get(String(r.companyId)).name }
+          : { id: r.companyId, name: null },
+        consentId: r.consentId,
+        meta: r.meta || {},
+      })),
+    });
+  } catch (err) {
+    console.error('Admin disclosure error:', err.message);
+    res.status(500).json({ error: 'Failed to load disclosure log' });
+  }
+});
+
+// GET /api/admin/disclosure/export.csv
+router.get('/disclosure/export.csv', async (req, res) => {
+  try {
+    const rows = await DisclosureAudit.find().sort({ createdAt: -1 }).limit(10000).lean();
+    const candidateIds = [...new Set(rows.map((r) => String(r.candidateId)))];
+    const companyIds = [...new Set(rows.map((r) => String(r.companyId)))];
+    const [users, companies] = await Promise.all([
+      User.find({ _id: { $in: candidateIds } }).select('email').lean(),
+      Company.find({ _id: { $in: companyIds } }).select('name').lean(),
+    ]);
+    const userMap = new Map(users.map((u) => [String(u._id), u.email]));
+    const companyMap = new Map(companies.map((c) => [String(c._id), c.name]));
+
+    const csv = arrayToCsv(
+      rows.map((r) => ({
+        at: r.createdAt ? r.createdAt.toISOString() : '',
+        action: r.action,
+        candidate: userMap.get(String(r.candidateId)) || String(r.candidateId),
+        company: companyMap.get(String(r.companyId)) || String(r.companyId),
+        scopes: (r.scopes || []).join(' '),
+        consentId: String(r.consentId || ''),
+      })),
+      ['at', 'action', 'candidate', 'company', 'scopes', 'consentId']
+    );
+    logAdminAction(req, 'disclosure.export', '', { rows: rows.length });
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="disclosure.csv"');
+    res.send(csv);
+  } catch (err) {
+    console.error('Admin disclosure export error:', err.message);
+    res.status(500).json({ error: 'Failed to export' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+//  Mastery - cohort view of the four readiness pillars.
+//
+//  Mirrors routes/readinessRoutes.js exactly: same pillar definitions, same
+//  40/30/20/10 weights, same renormalisation when a pillar has no data. The
+//  difference is that this scores every student and then reports the cohort,
+//  so an admin number and a student number can never disagree.
+// ---------------------------------------------------------------------------
+
+const PILLAR_WEIGHTS = { interview: 40, aptitude: 30, coding: 20, resume: 10 };
+
+/**
+ * Ids of users that still exist.
+ *
+ * Attempts outlive the accounts that made them — deleting a user leaves their
+ * TestResult and CodingSubmission rows behind. Counting those orphans against
+ * the cohort produces impossible figures like "7 of 5 students scored", so
+ * every cohort aggregate below is filtered through this set.
+ */
+async function existingUserIds() {
+  const ids = await User.distinct('_id');
+  return new Set(ids.map(String));
+}
+
+/**
+ * A $in matcher for "owned by a user that still exists".
+ *
+ * userId is declared as an ObjectId on the schema but the collection actually
+ * holds BOTH ObjectIds and plain strings, so an ObjectId-only $in silently
+ * matches nothing for the string rows. Both shapes are listed deliberately —
+ * do not "simplify" this to one of them.
+ */
+function liveUserMatch(live) {
+  const ids = [...live];
+  return {
+    $in: [
+      ...ids.filter((id) => mongoose.Types.ObjectId.isValid(id))
+            .map((id) => new mongoose.Types.ObjectId(id)),
+      ...ids
+    ]
+  };
+}
+
+/** Per-student pillar scores, keyed by user id. Orphaned ids are dropped. */
+async function scoreEveryStudent() {
+  const [aptitude, interview, coding, resume] = await Promise.all([
+    // Aptitude: accuracy over every graded answer
+    TestResult.aggregate([
+      { $unwind: '$selectedAnswers' },
+      { $match: { 'selectedAnswers.selected': { $nin: ['', null] } } },
+      { $group: {
+        _id: '$userId',
+        answered: { $sum: 1 },
+        correct: { $sum: { $cond: ['$selectedAnswers.isCorrect', 1, 0] } }
+      } },
+      { $project: { score: { $multiply: [{ $divide: ['$correct', '$answered'] }, 100] }, answered: 1 } }
+    ]),
+
+    // Interview: mean of the AI analysis overall score
+    InterviewSession.aggregate([
+      { $match: { analysisJson: { $ne: null } } },
+      { $group: { _id: '$user', score: { $avg: '$analysisJson.overallScore' } } }
+    ]),
+
+    // Coding: pass rate over the latest submission per attempted question
+    CodingSubmission.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: { u: '$userId', q: '$questionId' }, status: { $first: '$status' } } },
+      { $group: {
+        _id: '$_id.u',
+        attempted: { $sum: 1 },
+        accepted: { $sum: { $cond: [{ $eq: ['$status', 'accepted'] }, 1, 0] } }
+      } },
+      { $project: { score: { $multiply: [{ $divide: ['$accepted', '$attempted'] }, 100] } } }
+    ]),
+
+    // Resume: most recent analysis
+    ResumeAnalysis.aggregate([
+      { $sort: { createdAt: -1 } },
+      { $group: { _id: '$user', score: { $first: '$overallScore' } } }
+    ])
+  ]);
+
+  const live = await existingUserIds();
+  const byUser = new Map();
+  const put = (rows, key) => rows.forEach((r) => {
+    if (!r._id || !Number.isFinite(r.score)) return;
+    const id = String(r._id);
+    if (!live.has(id)) return; // attempt from a deleted account
+    if (!byUser.has(id)) byUser.set(id, {});
+    byUser.get(id)[key] = Math.round(r.score);
+  });
+  put(aptitude, 'aptitude');
+  put(interview, 'interview');
+  put(coding, 'coding');
+  put(resume, 'resume');
+  return byUser;
+}
+
+/** The same renormalising composite the student sees on /mastery. */
+function compositeScore(pillars) {
+  const present = Object.entries(PILLAR_WEIGHTS).filter(([k]) => pillars[k] != null);
+  const totalWeight = present.reduce((sum, [, w]) => sum + w, 0);
+  if (!totalWeight) return null;
+  return Math.round(present.reduce((sum, [k, w]) => sum + pillars[k] * w, 0) / totalWeight);
+}
+
+// GET /api/admin/readiness - cohort readiness across all four pillars
+router.get('/readiness', async (req, res) => {
+  try {
+    const byUser = await scoreEveryStudent();
+    const totalStudents = await User.countDocuments();
+
+    const pillars = {};
+    for (const key of Object.keys(PILLAR_WEIGHTS)) {
+      const scores = [...byUser.values()].map((p) => p[key]).filter((s) => s != null);
+      pillars[key] = {
+        weight: PILLAR_WEIGHTS[key],
+        students: scores.length,
+        average: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null
+      };
+    }
+
+    // Distribution of the composite, so an admin sees the shape of the cohort
+    // rather than only its mean.
+    const bands = [
+      { label: '0-39', min: 0, max: 39, students: 0 },
+      { label: '40-59', min: 40, max: 59, students: 0 },
+      { label: '60-74', min: 60, max: 74, students: 0 },
+      { label: '75-100', min: 75, max: 100, students: 0 }
+    ];
+    const composites = [];
+    byUser.forEach((p) => {
+      const c = compositeScore(p);
+      if (c == null) return;
+      composites.push(c);
+      const band = bands.find((b) => c >= b.min && c <= b.max);
+      if (band) band.students++;
+    });
+
+    res.json({
+      totalStudents,
+      scoredStudents: composites.length,
+      unscoredStudents: Math.max(totalStudents - composites.length, 0),
+      average: composites.length
+        ? Math.round(composites.reduce((a, b) => a + b, 0) / composites.length)
+        : null,
+      pillars,
+      bands
+    });
+  } catch (err) {
+    console.error('Admin readiness error:', err.message);
+    res.status(500).json({ error: 'Failed to compute cohort readiness' });
+  }
+});
+
+// GET /api/admin/weak-topics - topics the whole cohort struggles with.
+// Same computation as /api/questions/weak-topics/me but across every student,
+// and without the sub-60% filter so strong topics are visible too.
+router.get('/weak-topics', async (req, res) => {
+  try {
+    const live = await existingUserIds();
+    const topics = await TestResult.aggregate([
+      { $match: { userId: liveUserMatch(live) } },
+      { $unwind: '$selectedAnswers' },
+      { $match: { 'selectedAnswers.selected': { $nin: ['', null] } } },
+      { $group: {
+        _id: { $ifNull: ['$topic', 'logical'] },
+        answered: { $sum: 1 },
+        correct: { $sum: { $cond: ['$selectedAnswers.isCorrect', 1, 0] } },
+        students: { $addToSet: '$userId' }
+      } },
+      { $project: {
+        _id: 0,
+        topic: '$_id',
+        answered: 1,
+        correct: 1,
+        students: { $size: '$students' },
+        accuracy: { $round: [{ $multiply: [{ $divide: ['$correct', '$answered'] }, 100] }, 0] }
+      } },
+      { $sort: { accuracy: 1 } }
+    ]);
+    res.json({ topics });
+  } catch (err) {
+    console.error('Admin weak topics error:', err.message);
+    res.status(500).json({ error: 'Failed to load cohort topics' });
+  }
+});
+
+// GET /api/admin/engagement - who is actually practising.
+//
+// NOTE: there is no session or review-queue model yet, so this reports real
+// practice activity rather than inventing session completion. Wire the session
+// and ReviewItem counts in here once those land.
+router.get('/engagement', async (req, res) => {
+  try {
+    const now = Date.now();
+    const since = (days) => new Date(now - days * 864e5);
+    const live = await existingUserIds();
+
+    const activeIn = async (days) => {
+      const [tests, interviews, code] = await Promise.all([
+        TestResult.distinct('userId', { createdAt: { $gte: since(days) } }),
+        InterviewSession.distinct('user', { createdAt: { $gte: since(days) } }),
+        CodingSubmission.distinct('userId', { createdAt: { $gte: since(days) } })
+      ]);
+      const ids = [...tests, ...interviews, ...code].map(String).filter((id) => live.has(id));
+      return new Set(ids).size;
+    };
+
+    const [activeToday, active7d, active30d] = await Promise.all([
+      activeIn(1), activeIn(7), activeIn(30)
+    ]);
+    const totalStudents = live.size;
+
+    // Daily attempts over the last 14 days, matching the Overview chart window
+    const daily = await TestResult.aggregate([
+      { $match: { createdAt: { $gte: since(14) } } },
+      { $group: {
+        _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } },
+        attempts: { $sum: 1 },
+        students: { $addToSet: '$userId' }
+      } },
+      { $project: { _id: 0, date: '$_id', attempts: 1, students: { $size: '$students' } } },
+      { $sort: { date: 1 } }
+    ]);
+
+    // Busiest students over the last 30 days (existing accounts only)
+    const rows = await TestResult.aggregate([
+      { $match: {
+        createdAt: { $gte: since(30) },
+        userId: liveUserMatch(live)
+      } },
+      { $group: {
+        _id: '$userId',
+        attempts: { $sum: 1 },
+        days: { $addToSet: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } } },
+        lastActive: { $max: '$createdAt' }
+      } },
+      { $project: { attempts: 1, lastActive: 1, activeDays: { $size: '$days' } } },
+      { $sort: { activeDays: -1, attempts: -1 } },
+      { $limit: 10 }
+    ]);
+    const users = await User.find({ _id: { $in: rows.map((r) => r._id) } })
+      .select('name email').lean();
+    const userMap = new Map(users.map((u) => [String(u._id), u]));
+
+    res.json({
+      totalStudents,
+      activeToday,
+      active7d,
+      active30d,
+      daily,
+      mostActive: rows.map((r) => {
+        const u = userMap.get(String(r._id)) || {};
+        return {
+          userId: r._id,
+          name: u.name || null,
+          email: u.email || null,
+          attempts: r.attempts,
+          activeDays: r.activeDays,
+          lastActive: r.lastActive
+        };
+      })
+    });
+  } catch (err) {
+    console.error('Admin engagement error:', err.message);
+    res.status(500).json({ error: 'Failed to load engagement' });
+  }
+});
+
+module.exports = router;

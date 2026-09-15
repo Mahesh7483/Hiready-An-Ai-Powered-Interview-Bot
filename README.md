@@ -44,6 +44,37 @@ docker compose up --build        # frontend :3000, API :5000, Mongo :27017
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
+## Employers (`/hire`)
+
+A separate surface for companies hiring through the platform, governed by one
+rule: **no recruiter obtains candidate identity or evidence without an active,
+company-specific consent.**
+
+| Concept | Meaning |
+|---|---|
+| `Company` / `CompanyMembership` | Tenancy. Recruiter-ness is a relationship to a company, not a `User.role` |
+| `CandidateCompanyConsent` | Permission for ONE company to see ONE candidate. "Private" is the absence of a row |
+| `candidateAccess(req, id)` | The only door. Returns a frozen, request-scoped capability; every reader takes it, none accept a bare id |
+| `integrityVerdict` | How a recruiter learns a result is untrustworthy without any path to proctoring records |
+
+Recruiters never receive proctoring events or webcam frames, raw interview
+audio, practice history, or another company's pipeline. `ProctorSnapshot` is a
+separate collection with a TTL, and `__tests__/hireBoundary.test.js` fails the
+build if anything under `routes/hire/**` can reach it, directly or transitively.
+
+Recruiter screens: `/hire` (jobs and funnels), `/hire/jobs/:id` (the board,
+invite by email, tick two to five to compare), `/hire/invites` (outgoing
+invites and revoke), `/hire/compare` (section by section, deliberately with no
+composite score — people who sat different instruments are not comparable on
+one number), `/hire/candidates/:id` (the scorecard).
+
+Candidates manage this at `/privacy`: every company that can see them, with
+one-click revoke. Revoking stops future access — assessments a company already
+ran stay with that company, and the UI says so.
+
+Admins approve and suspend companies at `/admin/companies`; `/admin/disclosure`
+records who was disclosed, to whom, what, when, and under which consent.
+
 ## Environment variables
 
 | Variable | Where | Required | Purpose |
@@ -56,6 +87,7 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 | `ADMIN_EMAILS` | backend | optional | Comma-separated emails auto-promoted to admin |
 | `CORS_ORIGINS` | backend | optional | Allowed browser origins (localhost defaults) |
 | `ALLOW_UNSAFE_SANDBOX` | backend | optional | Linux+production refuses unsandboxed code execution unless `1` |
+| `PROCTOR_SNAPSHOT_RETENTION_DAYS` | backend | optional | How long webcam frames survive before the TTL index drops them (default `90`). Biometric data — set it to the shortest period your jurisdiction and policy allow, not the longest |
 | `VITE_API_URL` | frontend | ✅ | API base URL |
 | `VITE_FIREBASE_*` | frontend | for Google sign-in | Firebase web config (public identifiers) |
 
@@ -70,6 +102,7 @@ Never commit filled-in `.env` files — they are gitignored.
 | `npm run build` | frontend | Production SPA build |
 | `npm run lint` / `npm run typecheck` | frontend | ESLint / `tsc -b` (also run in CI) |
 | `npm audit` | both | Dependency vulnerability check |
+| `npm run smoke` | backend | Live end-to-end runs against a real server and mongod (see below) |
 
 ## Code-execution sandbox
 
@@ -82,6 +115,20 @@ explicitly. The docker-compose path runs execution inside the backend container
 and defaults to the opt-in, which is acceptable for local self-hosting only.
 
 ## Testing
+
+Two layers, because they catch different things.
+
+`npm test` mocks the models, so it proves logic: middleware ordering, scope
+derivation, refusal shape, schema shape. It cannot prove that a mongoose filter
+matches the documents mongo actually holds — and that is where this codebase's
+worst bugs have lived. `strict: true` dropping an undeclared `.set()` path, a
+cast filter matching zero rows while the route reports success, a subdocument
+array silently compiling to `[String]`: all of them passed review, and none of
+them produced an error message that named the cause.
+
+`npm run smoke` needs a running mongod. It seeds under a unique run tag, drives
+the real HTTP surface, and deletes everything afterwards including on failure —
+37 checks across the student assessment pipeline and the employer product.
 
 Run unit tests and verification across backend and frontend:
 
