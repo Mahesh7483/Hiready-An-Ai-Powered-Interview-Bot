@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import HireLayout from "@/components/hire/HireLayout";
 import { Button } from "@/components/ui/button";
@@ -9,15 +9,27 @@ import { Badge } from "@/components/ui/badge";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Mail, Loader2, ExternalLink } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ArrowLeft, Mail, Loader2, ExternalLink, GitCompare } from "lucide-react";
 import { toast } from "sonner";
 import { hireAPI, RECRUITER_STAGES, type PipelineStage } from "@/lib/hireApi";
 
 const HireJob = () => {
   const { id = "" } = useParams();
   const qc = useQueryClient();
+  const navigate = useNavigate();
   const [emails, setEmails] = useState("");
   const [links, setLinks] = useState<Array<{ email: string; token: string }>>([]);
+  // Comparison is capped at five server-side; cap here too so the UI cannot
+  // offer something the API will silently trim.
+  const [picked, setPicked] = useState<string[]>([]);
+
+  const togglePick = (candidateId: string) =>
+    setPicked((prev) =>
+      prev.includes(candidateId)
+        ? prev.filter((x) => x !== candidateId)
+        : prev.length >= 5 ? prev : [...prev, candidateId]
+    );
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["hire", "job", id],
@@ -134,9 +146,28 @@ const HireJob = () => {
       </Card>
 
       {/* Pipeline */}
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground mb-4">
-        Candidates
-      </h2>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+          Candidates
+        </h2>
+        {data.applications.length > 1 && (
+          <div className="flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">
+              {picked.length === 0
+                ? "Tick two to five to compare"
+                : `${picked.length} selected${picked.length >= 5 ? " (max)" : ""}`}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={picked.length < 2}
+              onClick={() => navigate(`/hire/compare?ids=${picked.join(",")}`)}
+            >
+              <GitCompare className="w-3.5 h-3.5 mr-1.5" /> Compare
+            </Button>
+          </div>
+        )}
+      </div>
       {data.applications.length === 0 ? (
         <Card className="border border-border">
           <CardHeader>
@@ -149,7 +180,19 @@ const HireJob = () => {
           {data.applications.map((a) => (
             <Card key={a.applicationId} className="border border-border">
               <CardContent className="py-4 flex flex-wrap items-center gap-3 justify-between">
-                <div className="min-w-0">
+                <div className="min-w-0 flex items-start gap-3">
+                  {a.stage !== "withdrawn" && (
+                    <Checkbox
+                      id={`pick-${a.applicationId}`}
+                      className="mt-0.5"
+                      checked={picked.includes(a.candidateId)}
+                      // Unticking must always work, so only block NEW ticks at the cap.
+                      disabled={!picked.includes(a.candidateId) && picked.length >= 5}
+                      onCheckedChange={() => togglePick(a.candidateId)}
+                      aria-label="Select for comparison"
+                    />
+                  )}
+                  <div className="min-w-0">
                   {/* No name here: the board shows position, not people. Opening
                       the scorecard is what performs the access check. */}
                   <Link
@@ -162,6 +205,7 @@ const HireJob = () => {
                     via {a.source}
                     {a.hasAttempt ? " · assessment on file" : " · no assessment yet"}
                   </p>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3">

@@ -57,6 +57,8 @@ const HirePipeline = lazy(() => import("./pages/hire/HirePipeline"));
 const HireJob = lazy(() => import("./pages/hire/HireJob"));
 const HireCandidate = lazy(() => import("./pages/hire/HireCandidate"));
 const HireDiscover = lazy(() => import("./pages/hire/HireDiscover"));
+const HireInvites = lazy(() => import("./pages/hire/HireInvites"));
+const HireCompare = lazy(() => import("./pages/hire/HireCompare"));
 
 // Candidate-side consent
 const Privacy = lazy(() => import("./pages/Privacy"));
@@ -175,6 +177,8 @@ const App = () => (
               <Route path="/hire/jobs/:id" element={<ProtectedRoute><HireJob /></ProtectedRoute>} />
               <Route path="/hire/candidates/:id" element={<ProtectedRoute><HireCandidate /></ProtectedRoute>} />
               <Route path="/hire/discover" element={<ProtectedRoute><HireDiscover /></ProtectedRoute>} />
+              <Route path="/hire/invites" element={<ProtectedRoute><HireInvites /></ProtectedRoute>} />
+              <Route path="/hire/compare" element={<ProtectedRoute><HireCompare /></ProtectedRoute>} />
 
               {/* ── Candidate consent ── */}
               <Route path="/privacy" element={<ProtectedRoute><Privacy /></ProtectedRoute>} />

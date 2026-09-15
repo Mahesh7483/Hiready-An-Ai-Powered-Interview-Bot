@@ -96,29 +96,66 @@ router.get('/', async (req, res) => {
           },
         },
       },
-      // `null >= 0` is false in BSON comparison order, so an unfiltered search
-      // was silently dropping candidates whose sections were all ungraded —
-      // despite this route promising that only non-opted-in candidates are absent.
-      { $match: minScore > 0 ? { percent: { $gte: minScore } } : {} },
-      { $sort: { percent: -1, lastAt: -1 } },
-      { $limit: limit },
     ]);
 
-    res.json({
-      total: rows.length,
-      // rows is already capped by $limit, so this is the returned count, not the
-      // size of the matching pool. Named accordingly rather than mislabelled.
-      capped: rows.length === limit,
-      candidates: rows.map((r) => ({
+    /**
+     * The consent list is the source of truth, not the attempt aggregate.
+     *
+     * Ranking straight off the pipeline made this a LEFT JOIN in name only: a
+     * candidate with no attempt on one of this company's templates produces no
+     * group, so they vanished entirely — despite having opted in, and despite
+     * the promise at the top of this file that only non-opted-in candidates
+     * are absent. In a placement-cell setting that is precisely the student a
+     * company most wants to reach: consented, available, not yet assessed.
+     *
+     * So build from the consents and merge the stats in. No evidence reads as
+     * `null`, which is honest, rather than as absence, which is a lie.
+     */
+    const statsById = new Map(rows.map((r) => [String(r._id), r]));
+
+    let candidates = consents.map((c) => {
+      const stat = statsById.get(String(c.candidateId));
+      return {
         // The opaque handle. It is the candidate id, which is fine precisely
         // because it resolves to nothing without consent — candidateAccess
         // refuses a DISCOVERABLE row, so possessing this buys an attacker
         // nothing beyond what this endpoint already returned.
-        handle: r._id,
-        assessmentPercent: r.percent,
-        assessments: r.attempts,
-        lastActiveAt: r.lastAt,
-      })),
+        handle: c.candidateId,
+        assessmentPercent: stat ? stat.percent : null,
+        assessments: stat ? stat.attempts : 0,
+        lastActiveAt: stat ? stat.lastAt : null,
+      };
+    });
+
+    // A score floor is a statement about evidence, so it excludes candidates
+    // who have none. At the default floor of 0 they are included.
+    if (minScore > 0) {
+      candidates = candidates.filter(
+        (c) => c.assessmentPercent !== null && c.assessmentPercent >= minScore
+      );
+    }
+
+    // Scored candidates first, best to worst; unscored after, most recently
+    // consenting first. Sorting `null` numerically would scatter them.
+    candidates.sort((a, b) => {
+      if (a.assessmentPercent === null && b.assessmentPercent === null) return 0;
+      if (a.assessmentPercent === null) return 1;
+      if (b.assessmentPercent === null) return -1;
+      if (b.assessmentPercent !== a.assessmentPercent) {
+        return b.assessmentPercent - a.assessmentPercent;
+      }
+      return new Date(b.lastActiveAt || 0) - new Date(a.lastActiveAt || 0);
+    });
+
+    // `total` is the size of the matching pool, computed BEFORE the cap — it
+    // was previously the length of the already-limited page, so a recruiter
+    // reading "25 candidates" was reading the page size.
+    const total = candidates.length;
+
+    res.json({
+      total,
+      capped: total > limit,
+      candidates: candidates.slice(0, limit),
     });
   } catch (err) {
     console.error('hire discover error:', err.message);

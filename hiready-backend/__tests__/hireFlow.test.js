@@ -26,10 +26,13 @@ jest.mock('../models/DisclosureAudit', () => require('./support/hireDb').collect
 jest.mock('../models/Job', () => require('./support/hireDb').collection('jobs'));
 jest.mock('../models/Application', () => {
   const model = require('./support/hireDb').collection('applications');
-  // `withdrawn` is the candidate's lever, never a recruiter's — the route
-  // validates against this list, so the test must use the real one.
-  model.STAGES = ['invited', 'applied', 'assessed', 'shortlisted', 'rejected', 'hired', 'withdrawn'];
-  model.RECRUITER_STAGES = model.STAGES.filter((s) => s !== 'withdrawn');
+  // Taken from the real model, never retyped. The first draft of this mock
+  // hand-listed the stages and got two of them wrong ('applied', 'assessed'),
+  // which the suite could not notice — the route validated against the mock's
+  // own invention, so it agreed with itself while disagreeing with production.
+  const real = jest.requireActual('../models/Application');
+  model.STAGES = real.STAGES;
+  model.RECRUITER_STAGES = real.RECRUITER_STAGES;
   return model;
 });
 jest.mock('../models/CompanyInvite', () => {
@@ -48,6 +51,7 @@ const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { db, seed, reset, oid } = require('./support/hireDb');
 const app = require('../server');
+const Application = jest.requireActual('../models/Application');
 
 const ids = {
   companyA: oid(),
@@ -119,6 +123,42 @@ beforeEach(() => {
   seed('attempts', attempt(ids.tplA, 91));
   seed('attempts', attempt(ids.tplB, 44));
   seed('attempts', attempt(ids.tplPlatform, 70));
+});
+
+// ── the client's copy of the stage list ────────────────────────────────────
+
+describe('the frontend stage list matches the model', () => {
+  const fs = require('fs');
+  const path = require('path');
+
+  test('RECRUITER_STAGES in hireApi.ts is identical to the model, in order', () => {
+    // The list is hand-duplicated across the wire because TypeScript cannot
+    // import a mongoose enum. Duplication is fine; SILENT duplication is not —
+    // a stage the client offers but the model rejects is a 400 the user sees
+    // as "nothing happened when I dragged the card".
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'hiready-frontend', 'src', 'lib', 'hireApi.ts'),
+      'utf8'
+    );
+    const match = src.match(/RECRUITER_STAGES:\s*PipelineStage\[\]\s*=\s*\[([^\]]*)\]/);
+    expect(match).not.toBeNull();
+
+    const client = match[1].split(',')
+      .map((s) => s.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean);
+    expect(client).toEqual(Application.RECRUITER_STAGES);
+  });
+
+  test('the client never offers withdrawn', () => {
+    // It is the candidate's lever. Offering it to a recruiter would let them
+    // record someone as having left of their own accord.
+    const src = fs.readFileSync(
+      path.join(__dirname, '..', '..', 'hiready-frontend', 'src', 'lib', 'hireApi.ts'),
+      'utf8'
+    );
+    const match = src.match(/RECRUITER_STAGES:\s*PipelineStage\[\]\s*=\s*\[([^\]]*)\]/);
+    expect(match[1]).not.toMatch(/withdrawn/);
+  });
 });
 
 // ── the tenant boundary ────────────────────────────────────────────────────
@@ -448,6 +488,75 @@ describe('every read that yields data is audited', () => {
     await as(request(app).get(`/api/hire/candidates/${ids.candidate}`), ids.recruiterB);
     await flush();
     expect(db.audits).toHaveLength(0);
+  });
+});
+
+// ── discovery is a left join, not an inner one ─────────────────────────────
+
+describe('discovery lists everyone who opted in', () => {
+  const { aggregates } = require('./support/hireDb');
+
+  beforeEach(() => {
+    db.consents = [];
+    // Two opted-in candidates for Acme. Only one has ever sat anything.
+    seed('consents', {
+      candidateId: ids.candidate, companyId: ids.companyA,
+      state: 'DISCOVERABLE', source: 'discovery', revokedAt: null, grantedAt: new Date(),
+    });
+    seed('consents', {
+      candidateId: ids.candidate2, companyId: ids.companyA,
+      state: 'DISCOVERABLE', source: 'discovery', revokedAt: null, grantedAt: new Date(),
+    });
+    aggregates.attempts = [
+      { _id: ids.candidate, attempts: 2, lastAt: new Date(), percent: 84 },
+    ];
+  });
+
+  test('a candidate with no attempt still appears, scored null', async () => {
+    // Ranking straight off the attempt aggregate made this an inner join: a
+    // candidate with nothing to rank produced no group and vanished, despite
+    // having opted in. In a placement cell that is the student a company most
+    // wants — consented, available, not yet assessed.
+    const res = await as(request(app).get('/api/hire/discover'), ids.recruiterA);
+    expect(res.status).toBe(200);
+
+    const handles = res.body.candidates.map((c) => String(c.handle));
+    expect(handles).toContain(String(ids.candidate));
+    expect(handles).toContain(String(ids.candidate2));
+
+    const unscored = res.body.candidates.find((c) => String(c.handle) === String(ids.candidate2));
+    expect(unscored.assessmentPercent).toBeNull();
+    expect(unscored.assessments).toBe(0);
+  });
+
+  test('scored candidates rank above unscored ones', async () => {
+    const res = await as(request(app).get('/api/hire/discover'), ids.recruiterA);
+    expect(String(res.body.candidates[0].handle)).toBe(String(ids.candidate));
+    expect(res.body.candidates[0].assessmentPercent).toBe(84);
+  });
+
+  test('a score floor excludes candidates with no evidence', async () => {
+    // A floor is a statement about evidence, so someone with none cannot meet
+    // it. At the default floor of 0 they are included.
+    const res = await as(request(app).get('/api/hire/discover?minScore=50'), ids.recruiterA);
+    const handles = res.body.candidates.map((c) => String(c.handle));
+    expect(handles).toEqual([String(ids.candidate)]);
+  });
+
+  test('total is the size of the pool, not of the page', async () => {
+    const res = await as(request(app).get('/api/hire/discover?limit=1'), ids.recruiterA);
+    expect(res.body.candidates).toHaveLength(1);
+    // Previously this reported the already-limited length, so a recruiter
+    // reading "1 candidate" was reading the page size.
+    expect(res.body.total).toBe(2);
+    expect(res.body.capped).toBe(true);
+  });
+
+  test('a candidate who never opted in is absent entirely', async () => {
+    const res = await as(request(app).get('/api/hire/discover'), ids.recruiterA);
+    const handles = res.body.candidates.map((c) => String(c.handle));
+    expect(handles).not.toContain(String(ids.stranger));
+    expect(res.body.total).toBe(2);
   });
 });
 

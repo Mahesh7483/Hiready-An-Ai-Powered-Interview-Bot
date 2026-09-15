@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { NavLink, Link } from "react-router-dom";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Briefcase, Users, Search, ArrowLeft, Loader2, ShieldX } from "lucide-react";
+import { Briefcase, Users, Search, Mail, ArrowLeft, Loader2, ShieldX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -19,6 +19,7 @@ import { hireAPI, getActiveCompany, setActiveCompany } from "@/lib/hireApi";
  */
 const NAV = [
   { to: "/hire", label: "Pipeline", icon: Briefcase, end: true },
+  { to: "/hire/invites", label: "Invites", icon: Mail, end: false },
   { to: "/hire/discover", label: "Discover", icon: Search, end: false },
 ];
 
@@ -30,7 +31,9 @@ const HireLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     retry: false,
   });
 
-  const companies = data?.companies ?? [];
+  // Memoised: a fresh [] each render makes the effect below fire forever,
+  // and that effect writes localStorage.
+  const companies = useMemo(() => data?.companies ?? [], [data]);
 
   // Held in React state, not read from localStorage during render: localStorage
   // is not reactive, so a switch would store the new company but leave the UI
@@ -87,7 +90,7 @@ const HireLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
             This area is for employers. If your company should have access, ask your
             administrator to add you to its team.
           </p>
-          <Link to="/dashboard">
+          <Link to="/mastery">
             <Button variant="outline" className="mt-6">
               <ArrowLeft className="w-4 h-4 mr-2" /> Back to HiREady
             </Button>

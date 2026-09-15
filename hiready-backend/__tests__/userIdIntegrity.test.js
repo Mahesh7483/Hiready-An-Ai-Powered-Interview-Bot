@@ -146,6 +146,28 @@ describe('deleting a user is complete and reports what it did', () => {
   });
 });
 
+describe('deleting an interview session purges its proctoring', () => {
+  const src = read('routes/interviewSessionRoutes.js');
+
+  test('both branches of the cascade delete ProctorSnapshot', () => {
+    // Phase A split biometric webcam frames out of ProctorLog into their own
+    // collection, and this path was not updated — so a student deleting their
+    // session kept their images for the rest of a 90-day TTL while the
+    // response said 'Deleted'. There are TWO branches (replica-set transaction
+    // and standalone parallel) and they must stay in step.
+    const deletes = src.match(/ProctorSnapshot\.deleteMany/g) || [];
+    const logDeletes = src.match(/ProctorLog\.deleteMany/g) || [];
+    expect(deletes.length).toBe(logDeletes.length);
+    expect(deletes.length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the response reports what was purged', () => {
+    // Silence is how the previous gap survived: nothing in the response
+    // distinguished "purged nothing" from "purged everything".
+    expect(src).toMatch(/purgedSnapshotsCount/);
+  });
+});
+
 describe('unguarded ObjectId casts', () => {
   test('no route constructs an ObjectId from a request value without a guard', () => {
     const routes = [];

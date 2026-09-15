@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const InterviewSession = require('../models/InterviewSession');
+const ProctorSnapshot = require('../models/ProctorSnapshot');
 const ProctorLog = require('../models/ProctorLog');
 const { requireAuth } = require('../middleware/auth');
 
@@ -238,36 +239,48 @@ async function executeCascadeDeletion(sessionDoc, userId) {
 
       const sessionOpts = { session: dbSession };
       const proctorResult = await ProctorLog.deleteMany(proctorQuery, sessionOpts);
+      // Webcam frames. Phase A split these out of ProctorLog into their own
+      // collection and this path was never updated, so deleting a session left
+      // the student's images behind for the rest of their 90-day TTL — while
+      // the response said 'Deleted'.
+      const snapshotResult = await ProctorSnapshot.deleteMany(proctorQuery, sessionOpts);
       await InterviewSession.deleteOne({ _id: sessionDoc._id }, sessionOpts);
 
       await dbSession.commitTransaction();
       return {
         success: true,
         deletedSessionId: sessionDoc.sessionId,
-        purgedLogsCount: proctorResult.deletedCount || 0
+        purgedLogsCount: proctorResult.deletedCount || 0,
+        purgedSnapshotsCount: snapshotResult.deletedCount || 0
       };
     }
   } catch (txErr) {
     if (dbSession) {
-      try { await dbSession.abortTransaction(); } catch {}
+      // Already aborted, or the connection went away — either way there is
+      // nothing left to roll back and the fallback below still runs.
+      try { await dbSession.abortTransaction(); } catch { /* nothing to abort */ }
     }
     // Transaction not supported on standalone local Mongo; fall through to parallel cleanup
   } finally {
     if (dbSession) {
-      try { dbSession.endSession(); } catch {}
+      try { dbSession.endSession(); } catch { /* already ended */ }
     }
   }
 
-  // Explicit parallel cleanup: purges both ProctorLog snapshots and InterviewSession
-  const [proctorResult] = await Promise.all([
+  // Explicit parallel cleanup, for a standalone mongod with no transactions.
+  // Must stay in step with the transactional branch above — including the
+  // biometric frames, which are a separate collection since Phase A.
+  const [proctorResult, snapshotResult] = await Promise.all([
     ProctorLog.deleteMany(proctorQuery),
+    ProctorSnapshot.deleteMany(proctorQuery),
     InterviewSession.deleteOne({ _id: sessionDoc._id })
   ]);
 
   return {
     success: true,
     deletedSessionId: sessionDoc.sessionId,
-    purgedLogsCount: proctorResult.deletedCount || 0
+    purgedLogsCount: proctorResult.deletedCount || 0,
+    purgedSnapshotsCount: snapshotResult.deletedCount || 0
   };
 }
 
