@@ -1,152 +1,267 @@
-# Hiready — AI-Powered Interview Preparation Platform
+# HiREady
 
-Hiready is a full-stack interview-prep platform: aptitude practice and proctored tests with analytics, AI-analyzed voice interviews, an AI resume analyzer, a coding playground with a sandboxed judge, timed assessments with anti-cheat, and a unified "readiness" dashboard.
+An AI-assisted interview preparation platform, and the hiring surface built on
+top of it.
 
-## Project structure
+Students practise aptitude, coding, and voice interviews, sit proctored
+multi-section assessments, and track a single readiness score. Employers invite
+those students, run assessments against them, and review the results — but only
+for candidates who have explicitly granted that company access, and only ever
+the graded outcome, never the proctoring evidence behind it.
+
+---
+
+## Contents
+
+- [Architecture](#architecture)
+- [Quickstart](#quickstart)
+- [Configuration](#configuration)
+- [The student surface](#the-student-surface)
+- [The employer surface](#the-employer-surface)
+- [Code-execution sandbox](#code-execution-sandbox)
+- [Testing](#testing)
+- [Scripts](#scripts)
+- [Security](#security)
+- [Contributors](#contributors)
+
+---
+
+## Architecture
 
 ```
-hiready-backend/    Express 5 + Mongoose API (JWT auth, Groq LLM, Deepgram STT,
-                    code-execution sandbox, Socket.io collaboration)
-hiready-frontend/   React 18 + Vite + TypeScript + Tailwind/shadcn (Firebase auth,
-                    TensorFlow.js proctoring, Monaco editor, Recharts)
-docker-compose.yml  One-command local stack (Mongo + API + nginx-served SPA)
-.github/workflows/  CI: frontend lint/typecheck/build + backend syntax & boot check
+hiready-backend/     Express 4 + Mongoose 8 REST API
+                     JWT auth · Groq LLM · Deepgram STT · sandboxed code runner
+hiready-frontend/    React 18 + Vite 5 + TypeScript 5 SPA
+                     Tailwind + shadcn/ui · TensorFlow.js proctoring · Monaco · Recharts
+docker-compose.yml   Local stack: MongoDB + API + nginx-served SPA
 ```
 
-## Quickstart (manual)
+| Layer | Runs on | Notes |
+|---|---|---|
+| API | `:5000` | `npm run dev` (nodemon) or `npm start` |
+| SPA | `:8080` | Vite dev server; port is fixed in `vite.config.ts` |
+| MongoDB | `:27017` | Local, Atlas, or the Compose service |
 
-Prerequisites: Node 20+, MongoDB (local or Atlas), Python 3 optionally (for code execution).
+Requires Node 20 or newer.
+
+---
+
+## Quickstart
+
+### Manual
 
 ```sh
-# 1. Backend
-cd hiready-backend
-cp ../.env.example .env          # then fill in the values (see below)
-npm install
-npm run dev                      # http://localhost:5000
-
-# 2. Frontend
-cd ../hiready-frontend
-cp ../.env.example .env          # fill in VITE_* values
-npm install
-npm run dev                      # http://localhost:5173
+git clone https://github.com/Mahesh7483/Hiready-An-Ai-Powered-Interview-Bot.git
+cd Hiready-An-Ai-Powered-Interview-Bot
 ```
 
-## Quickstart (Docker)
+Create `hiready-backend/.env` and `hiready-frontend/.env` using the
+[Configuration](#configuration) table below, then:
 
 ```sh
-cp .env.example .env             # fill in JWT_SECRET + API keys first
-docker compose up --build        # frontend :3000, API :5000, Mongo :27017
+cd hiready-backend && npm install && npm run dev     # http://localhost:5000
 ```
 
-`JWT_SECRET` is **required** — compose refuses to start without it. Generate one:
+```sh
+cd hiready-frontend && npm install && npm run dev    # http://localhost:8080
+```
+
+### Docker
+
+```sh
+docker compose up --build        # SPA :3000 · API :5000 · MongoDB :27017
+```
+
+Compose reads a `.env` at the repository root and refuses to start without
+`JWT_SECRET`. Generate one with:
 
 ```sh
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-## Employers (`/hire`)
+---
 
-A separate surface for companies hiring through the platform, governed by one
-rule: **no recruiter obtains candidate identity or evidence without an active,
-company-specific consent.**
+## Configuration
+
+| Variable | Side | Required | Purpose |
+|---|---|---|---|
+| `JWT_SECRET` | backend | yes | Signs session tokens. 48+ random bytes |
+| `MONGO_URI` | backend | yes | MongoDB connection string |
+| `GROQ_API_KEY` | backend | for AI features | LLM chat, interview and resume analysis |
+| `GROQ_MODEL` | backend | optional | Overrides the default model |
+| `DEEPGRAM_API_KEY` | backend | for voice | Speech-to-text. The browser only ever receives 60-second scoped tokens |
+| `FIREBASE_PROJECT_ID` | backend | for Google sign-in | Verifies Firebase ID tokens (issuer and audience) |
+| `ADMIN_EMAILS` | backend | optional | Comma-separated addresses auto-promoted to admin |
+| `CORS_ORIGINS` | backend | optional | Allowed browser origins. Defaults to localhost |
+| `ALLOW_UNSAFE_SANDBOX` | backend | optional | See [sandbox](#code-execution-sandbox). `1` opts in |
+| `PROCTOR_SNAPSHOT_RETENTION_DAYS` | backend | optional | Lifetime of stored webcam frames before the TTL index drops them. Default `90`. This is biometric data — set the shortest period your policy and jurisdiction allow, not the longest |
+| `VITE_API_URL` | frontend | yes | API base URL, e.g. `http://localhost:5000/api` |
+| `VITE_FIREBASE_*` | frontend | for Google sign-in | Firebase web config. These are public identifiers |
+
+Never commit a populated `.env`. All of them are gitignored.
+
+---
+
+## The student surface
+
+| Route | Purpose |
+|---|---|
+| `/mastery` | Readiness score across four weighted pillars, and the weakest one to work on next |
+| `/mastery/review` | Every question previously answered incorrectly |
+| `/practice` | Self-directed practice: aptitude, coding, interviews, resume, leaderboard |
+| `/practice/assessment` | Timed multi-section assessments with anti-cheat |
+| `/privacy` | Every company that can currently see you, with one-click revoke |
+
+Readiness is computed **server-side only**, in `routes/readinessRoutes.js`:
+interview 40, aptitude 30, coding 20, resume 10, renormalised when a pillar has
+no data. The client renders that number and never recomputes it — two formulas
+inevitably disagree, and the student is shown the one that is wrong.
+
+---
+
+## The employer surface
+
+A separate application at `/hire`, governed by a single rule:
+
+> **No recruiter obtains candidate identity or hiring evidence unless an active,
+> company-specific authorization exists for that candidate.**
 
 | Concept | Meaning |
 |---|---|
-| `Company` / `CompanyMembership` | Tenancy. Recruiter-ness is a relationship to a company, not a `User.role` |
-| `CandidateCompanyConsent` | Permission for ONE company to see ONE candidate. "Private" is the absence of a row |
-| `candidateAccess(req, id)` | The only door. Returns a frozen, request-scoped capability; every reader takes it, none accept a bare id |
-| `integrityVerdict` | How a recruiter learns a result is untrustworthy without any path to proctoring records |
+| `Company` / `CompanyMembership` | Tenancy. Being a recruiter is a relationship to a company, not a `User.role` |
+| `CandidateCompanyConsent` | Permission for one company to see one candidate. "Private" is the **absence** of a row, so default-deny falls out of the schema |
+| `candidateAccess(req, id)` | The only door. Returns a frozen, request-scoped capability; every reader takes one and none accept a bare id |
+| `integrityVerdict` | How a recruiter learns a result is untrustworthy without any path to the proctoring records that determined it |
+| `DisclosureAudit` | Who saw which candidate, under which consent, when. Deliberately outlives both |
 
-Recruiters never receive proctoring events or webcam frames, raw interview
-audio, practice history, or another company's pipeline. `ProctorSnapshot` is a
-separate collection with a TTL, and `__tests__/hireBoundary.test.js` fails the
-build if anything under `routes/hire/**` can reach it, directly or transitively.
+| Route | Purpose |
+|---|---|
+| `/hire` | Every job and its funnel counts |
+| `/hire/jobs/:id` | The pipeline board; invite by email; select two to five candidates to compare |
+| `/hire/invites` | Outgoing invites and their status, with revoke |
+| `/hire/compare` | Side-by-side, section by section |
+| `/hire/candidates/:id` | The scorecard — the only screen that can resolve a real person |
+| `/admin/companies` | Approve, activate and suspend companies |
+| `/admin/disclosure` | The disclosure audit, exportable |
 
-Recruiter screens: `/hire` (jobs and funnels), `/hire/jobs/:id` (the board,
-invite by email, tick two to five to compare), `/hire/invites` (outgoing
-invites and revoke), `/hire/compare` (section by section, deliberately with no
-composite score — people who sat different instruments are not comparable on
-one number), `/hire/candidates/:id` (the scorecard).
+Design decisions worth not re-litigating:
 
-Candidates manage this at `/privacy`: every company that can see them, with
-one-click revoke. Revoking stops future access — assessments a company already
-ran stay with that company, and the UI says so.
+- **Every refusal is a byte-identical 404.** A 403 would confirm that a
+  candidate exists and let the pool be enumerated.
+- **Suspension bites on the next request.** Membership and company status are
+  re-read per request, never cached into a session.
+- **Revocation stops future access only.** A company that already ran an
+  assessment keeps that result; the UI says so rather than implying otherwise.
+- **Comparison produces no composite score.** Candidates who sat different
+  instruments are not comparable on one number, and presenting one anyway would
+  be a confident figure with nothing behind it.
+- **Recruiters never receive** proctoring events, webcam frames, raw interview
+  audio, practice history, or another company's pipeline. `ProctorSnapshot` is
+  a separate collection with a TTL, and `__tests__/hireBoundary.test.js` walks
+  the transitive `require` graph from `routes/hire/**` and fails the build if
+  any of them becomes reachable.
 
-Admins approve and suspend companies at `/admin/companies`; `/admin/disclosure`
-records who was disclosed, to whom, what, when, and under which consent.
-
-## Environment variables
-
-| Variable | Where | Required | Purpose |
-|---|---|---|---|
-| `JWT_SECRET` | backend | ✅ | JWT signing (48+ random bytes) |
-| `MONGO_URI` | backend | ✅ | MongoDB connection string |
-| `GROQ_API_KEY` / `GROQ_MODEL` | backend | for AI features | LLM chat/analysis |
-| `DEEPGRAM_API_KEY` | backend | for voice | STT (browser gets 60s scoped tokens only) |
-| `FIREBASE_PROJECT_ID` | backend | for Google sign-in | Verifies Firebase ID tokens (issuer/audience) |
-| `ADMIN_EMAILS` | backend | optional | Comma-separated emails auto-promoted to admin |
-| `CORS_ORIGINS` | backend | optional | Allowed browser origins (localhost defaults) |
-| `ALLOW_UNSAFE_SANDBOX` | backend | optional | Linux+production refuses unsandboxed code execution unless `1` |
-| `PROCTOR_SNAPSHOT_RETENTION_DAYS` | backend | optional | How long webcam frames survive before the TTL index drops them (default `90`). Biometric data — set it to the shortest period your jurisdiction and policy allow, not the longest |
-| `VITE_API_URL` | frontend | ✅ | API base URL |
-| `VITE_FIREBASE_*` | frontend | for Google sign-in | Firebase web config (public identifiers) |
-
-Never commit filled-in `.env` files — they are gitignored.
-
-## Scripts
-
-| Command | Location | Description |
-|---|---|---|
-| `npm run dev` | both | Dev servers (nodemon / Vite) |
-| `npm start` | backend | Production API server |
-| `npm run build` | frontend | Production SPA build |
-| `npm run lint` / `npm run typecheck` | frontend | ESLint / `tsc -b` (also run in CI) |
-| `npm audit` | both | Dependency vulnerability check |
-| `npm run smoke` | backend | Live end-to-end runs against a real server and mongod (see below) |
+---
 
 ## Code-execution sandbox
 
-The coding module executes user-submitted code (Python, JS/TS, Java, Go, C++, Rust).
-Executed processes receive a **minimal environment** — server secrets are never
-passed to user code. On Linux production servers, unsandboxed ("direct") execution
-is **refused** unless [nsjail](https://github.com/google/nsjail) is installed
-(recommended; needs root/CAP_SYS_ADMIN) or `ALLOW_UNSAFE_SANDBOX=1` is set
-explicitly. The docker-compose path runs execution inside the backend container
-and defaults to the opt-in, which is acceptable for local self-hosting only.
+The coding module executes user-submitted Python, JavaScript/TypeScript, Java,
+Go, C++ and Rust. Executed processes receive a **minimal environment** — server
+secrets are never passed to user code.
+
+On Linux in production, unsandboxed execution is **refused** unless
+[nsjail](https://github.com/google/nsjail) is installed (recommended; needs root
+or `CAP_SYS_ADMIN`) or `ALLOW_UNSAFE_SANDBOX=1` is set explicitly. The Docker
+Compose path runs execution inside the backend container and defaults to the
+opt-in, which is acceptable for local self-hosting only.
+
+---
 
 ## Testing
 
-Two layers, because they catch different things.
+Two layers, because they fail differently.
 
-`npm test` mocks the models, so it proves logic: middleware ordering, scope
-derivation, refusal shape, schema shape. It cannot prove that a mongoose filter
-matches the documents mongo actually holds — and that is where this codebase's
-worst bugs have lived. `strict: true` dropping an undeclared `.set()` path, a
-cast filter matching zero rows while the route reports success, a subdocument
-array silently compiling to `[String]`: all of them passed review, and none of
-them produced an error message that named the cause.
+**`npm test`** — 199 tests across 14 suites. Models are mocked, so this proves
+logic: middleware ordering, scope derivation, refusal shape, compiled schema
+shape, and the data-access boundary. No database required.
 
-`npm run smoke` needs a running mongod. It seeds under a unique run tag, drives
-the real HTTP surface, and deletes everything afterwards including on failure —
-37 checks across the student assessment pipeline and the employer product.
+**`npm run smoke`** — 37 checks against a real server and a real `mongod`. Each
+run seeds under a unique tag, drives the real HTTP surface, and deletes
+everything afterwards including on failure.
 
-Run unit tests and verification across backend and frontend:
+The second layer exists because the first cannot prove that a Mongoose filter
+matches the documents MongoDB actually holds — and that is where this
+codebase's worst defects have lived. A `strict: true` schema silently dropping
+an undeclared `.set()` path; a cast query filter matching zero rows while the
+route reports success; a subdocument array compiling to `[String]` because one
+of its fields was named `type`. Each passed review, and none produced an error
+message that named the cause.
 
 ```sh
-cd hiready-backend && npm test
-cd hiready-frontend && npm run lint && npm run typecheck && npm run build
+cd hiready-backend  && npm test && npm run typecheck && npm run lint
+cd hiready-frontend && npm run typecheck && npm run lint && npm run build
 ```
 
-## 👥 Contributors
+`npm run smoke` additionally needs MongoDB running and a populated `.env`.
 
-- **Mahi / Mahesh** ([@1at23cs079-Mahi](https://github.com/1at23cs079-Mahi)) — Lead Architect, Security Hardening, Proctoring ML Engine, and Full-Stack Engineering.
-- **Prajwal** ([@Prajwal-SM-2005](https://github.com/Prajwal-SM-2005)) — Project Collaboration & Platform Design.
+---
 
-## Security notes
+## Scripts
 
-- Report vulnerabilities privately via GitHub Security Advisories (add one under
-  *Security → Advisories* when the repo is public).
-- Rotate `JWT_SECRET` and API keys if they were ever used outside local development.
-- Admin access is re-checked against the database on every admin request; all
-  admin and user-data routes are authenticated and ownership-scoped.
+### Backend
 
+| Command | Description |
+|---|---|
+| `npm run dev` | Development server with nodemon |
+| `npm start` | Production server |
+| `npm test` | Jest suite |
+| `npm run smoke` | Both live end-to-end runs (needs MongoDB) |
+| `npm run smoke:assessment` | Student assessment pipeline only |
+| `npm run smoke:hire` | Employer product only |
+| `npm run typecheck` | Syntax check across all backend sources |
+| `npm run lint` / `npm run lint:fix` | ESLint |
+
+### Frontend
+
+| Command | Description |
+|---|---|
+| `npm run dev` | Vite dev server on `:8080` |
+| `npm run build` | Production build |
+| `npm run preview` | Serve the production build locally |
+| `npm run typecheck` | `tsc -b` |
+| `npm run lint` / `npm run lint:fix` | ESLint |
+
+### Maintenance
+
+| Command | Description |
+|---|---|
+| `node scripts/migrateUserIdTypes.js --dry` | Converts legacy string-typed `userId` values to `ObjectId`. Uses the raw driver, because a Mongoose query cannot find the rows it must repair |
+| `node scripts/cleanupOrphanedUserData.js` | Reports rows belonging to deleted accounts. Add `--commit` to delete; every row is dumped to `backups/` first |
+| `node scripts/migrateProctorSnapshots.js --dry` | Moves inline proctoring frames into `ProctorSnapshot` |
+
+All maintenance scripts default to a dry run and print what they would change.
+
+---
+
+## Security
+
+- Report vulnerabilities privately through GitHub Security Advisories
+  (*Security → Advisories*) rather than a public issue.
+- Rotate `JWT_SECRET` and every API key if they were ever used outside local
+  development.
+- Admin status is re-read from the database on every admin request, so a
+  demotion takes effect immediately without reissuing tokens.
+- All user-data routes are authenticated and ownership-scoped.
+- Deleting an account cascades across every collection holding a reference to
+  that person, including biometric snapshots, and reports a per-collection
+  deleted count. `DisclosureAudit` is excluded by design: it must outlive the
+  consent it records, or it cannot answer "who saw my results?" later.
+
+---
+
+## Contributors
+
+- **Mahesh** ([@1at23cs079-Mahi](https://github.com/1at23cs079-Mahi)) — architecture,
+  security hardening, proctoring ML, full-stack engineering
+- **Prajwal** ([@Prajwal-SM-2005](https://github.com/Prajwal-SM-2005)) — platform
+  design and collaboration
