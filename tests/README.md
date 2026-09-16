@@ -4,11 +4,12 @@ Every suite in the project lives here rather than inside the two packages.
 
 ```
 tests/
-  backend/           19 Jest suites · 293 tests
+  backend/           22 Jest suites · 361 tests
     support/
       paths.js       resolves the code under test
       hireDb.js      in-memory model mocks for the hire suite
-  frontend/          2 Vitest suites · 11 tests
+  frontend/           4 Vitest suites ·  28 tests
+    setup.ts         jsdom storage polyfill + cleanup
 ```
 
 ## Running them
@@ -31,7 +32,7 @@ Three things had to be told where to look, and each is commented where it lives:
 | Where | What it does |
 |---|---|
 | `hiready-backend/jest.config.js` | `rootDir` is the repo root so `roots` can point outside the package; `modulePaths` adds that package's `node_modules`, because a bare `require('mongoose')` from here would otherwise walk up to the root and find only the dev runner |
-| `hiready-frontend/vitest.config.ts` | `include` points at `../tests/frontend`; `pdfjs-dist` and `mammoth` are aliased to absolute paths so `vi.mock` and the source agree on one module id |
+| `hiready-frontend/vitest.config.ts` | `include` points at `../tests/frontend`; EVERY dependency in package.json is aliased to this package's node_modules, derived not listed; `esbuild.jsx: "automatic"` because no React plugin is loaded here; `server.fs.allow` widened to the repo |
 | `hiready-frontend/tsconfig.app.json` | `include` covers `../tests/frontend`, and `vitest` is pinned in `paths` |
 
 ## Use `support/paths.js`, not `..`
@@ -70,3 +71,30 @@ suite go red:
 Each structural suite also carries a non-vacuity test ("the scan actually found
 …") asserting that its walk returned something. Those are load-bearing, not
 decoration.
+
+## Resolution, in one place
+
+Three separate things had to be told that a bare specifier should resolve from
+`hiready-frontend`, and each failed differently before it was:
+
+| Symptom | Cause |
+|---|---|
+| `vi.mock("pdfjs-dist")` silently stopped mocking; the real browser build loaded and died on `DOMMatrix is not defined` | the mock registered under one module id, the source imported another |
+| `Failed to resolve import "@testing-library/react"` | Vite's walk from `tests/frontend` never reaches the package |
+| `Cannot find module '@testing-library/react' or its corresponding type declarations` while the tests passed | TypeScript resolves separately from Vite, so `tsc` needed its own `paths` |
+
+The Vite side is now derived from `package.json` rather than listed, so a
+dependency added tomorrow is covered. The TypeScript side is **deliberately
+not** a `"*"` catch-all: that makes `tsc` resolve `react` to
+`node_modules/react/index.js` and stop looking for `@types/react`, and the
+whole app loses its types to implicit `any`. Targeted entries only.
+
+## jsdom does not give you localStorage here
+
+Verified, not assumed: with `environment: "jsdom"` and a real origin,
+`typeof document` is `"object"` and both `localStorage` and
+`window.localStorage` are `undefined`. That reads as "jsdom is off" and is not.
+
+`setup.ts` installs a Map-backed `Storage`. The app keeps its session token
+there, so the 401 handling in `lib/api.ts` — the reason every call goes through
+`apiFetch` at all — cannot be tested without it.
