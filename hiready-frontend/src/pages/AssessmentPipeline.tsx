@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
+import { DesktopOnly } from "@/components/DesktopOnly";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -645,4 +646,15 @@ const AssessmentPipeline = () => {
   );
 };
 
-export default AssessmentPipeline;
+/**
+ * Wrapped at the export, not inside the component: the device check has to
+ * run BEFORE any proctoring effect mounts, and a hook inside would already
+ * have requested fullscreen and started the webcam monitor.
+ */
+const AssessmentPipelineGuarded = () => (
+  <DesktopOnly activity="assessment">
+    <AssessmentPipeline />
+  </DesktopOnly>
+);
+
+export default AssessmentPipelineGuarded;

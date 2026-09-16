@@ -14,7 +14,7 @@ import CandidateWebcamMonitor from "@/components/proctoring/CandidateWebcamMonit
 import { sendProctorLog, type ProctorEvent } from "@/lib/proctorLogger";
 import { captureWebcamSnapshot } from "@/lib/webcamSnap";
 import { saveInterviewSession } from "@/lib/historyApi";
-import { detectDevice } from "@/lib/deviceGuard";
+import { DesktopOnly } from "@/components/DesktopOnly";
 import { runAudioCheck } from "@/lib/audioCheck";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -1336,34 +1336,17 @@ const VoiceInterviewContent = () => {
 // ============================================================
 // Main Voice Interview Page Component
 // ============================================================
-const VoiceInterview = () => {
-  // ── Device guard: interviews are desktop-only ──
-  const deviceCheck = detectDevice();
-  if (!deviceCheck.allowed) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-background via-background to-destructive/5 flex items-center justify-center p-4">
-        <Card className="w-full max-w-lg border-2 border-destructive/40 shadow-2xl p-8 text-center space-y-4">
-          <div className="w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center mx-auto">
-            <MonitorSmartphone className="w-8 h-8 text-destructive" />
-          </div>
-          <h1 className="text-2xl font-bold text-foreground">Desktop Required</h1>
-          <p className="text-sm font-medium text-destructive uppercase tracking-wide">
-            Detected device: {deviceCheck.deviceType}
-          </p>
-          <p className="text-sm text-muted-foreground leading-relaxed">{deviceCheck.reason}</p>
-          <ul className="text-xs text-muted-foreground text-left list-disc pl-6 space-y-1">
-            <li>Fullscreen lock and tab-switch detection</li>
-            <li>Live webcam proctoring with face detection</li>
-            <li>Copy/paste and right-click blocking</li>
-          </ul>
-          <p className="text-xs text-muted-foreground pt-2 border-t border-border">
-            Please switch to a laptop or desktop computer to take the interview.
-          </p>
-        </Card>
-      </div>
-    );
-  }
-  return <VoiceInterviewContent />;
-};
+/**
+ * The device gate now lives in components/DesktopOnly, shared with the
+ * aptitude test, the coding interview and the assessment pipeline — all of
+ * which run the same proctoring and none of which had it. This page had the
+ * only copy, and its interview-specific wording was the reason it was never
+ * reused.
+ */
+const VoiceInterview = () => (
+  <DesktopOnly activity="voice interview">
+    <VoiceInterviewContent />
+  </DesktopOnly>
+);
 
 export default VoiceInterview;

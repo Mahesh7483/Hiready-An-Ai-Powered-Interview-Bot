@@ -187,8 +187,32 @@ function initCollab(httpServer) {
       io.to(room).emit('coding:control-changed', { controller });
     });
 
+    /**
+     * Release the room's per-room state once the last occupant leaves.
+     *
+     * `buckets` was cleaned up; `activeControllers` and `adhocRoomOwners` were
+     * not, so both grew for the lifetime of the process — one entry per coding
+     * room ever opened, never released. On a long-lived server that is an
+     * unbounded leak, and a slow one, which is the kind that gets found in
+     * production rather than in review.
+     *
+     * Read the occupant count INSIDE 'disconnecting', where this socket is
+     * still a member of the room: by 'disconnect' it has already left and the
+     * room may have been dropped from the adapter entirely.
+     */
+    const releaseRoomState = () => {
+      if (!room) return;
+      const occupants = io.sockets.adapter.rooms.get(room);
+      // This socket is still counted here, so 1 means it is the last one out.
+      if (!occupants || occupants.size <= 1) {
+        activeControllers.delete(room);
+        adhocRoomOwners.delete(room);
+      }
+    };
+
     socket.on('disconnecting', () => {
       if (room) socket.to(room).emit('coding:peer-left', { userId: socket.data.userId, name: socket.data.name });
+      releaseRoomState();
       buckets.delete(socket.id);
     });
     socket.on('disconnect', () => { buckets.delete(socket.id); });

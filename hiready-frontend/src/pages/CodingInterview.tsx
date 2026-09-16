@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import DashboardLayout from "@/components/DashboardLayout";
+import { DesktopOnly } from "@/components/DesktopOnly";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -63,7 +63,6 @@ function useIsDesktop(): boolean {
 
 const CodingInterview = () => {
   const navigate = useNavigate();
-  const { resolvedTheme } = useTheme();
   const isDesktop = useIsDesktop();
 
   const [phase, setPhase] = useState<Phase>("start");
@@ -470,13 +469,17 @@ const CodingInterview = () => {
   // ── workspace ────────────────────────────────────────────────────────────
   if (!question) return null;
 
+  // No `theme` prop: CodeEditor owns its own default and its own picker. This
+  // used to pass resolvedTheme from next-themes, which had no provider mounted
+  // anywhere in the app — so it was permanently undefined and the expression
+  // always forced the light theme, overriding an editor default nobody had
+  // chosen to change.
   const editor = (
     <CodeEditor
       language={language}
       code={code}
       onChange={setCode}
       readOnly={isRunning || isSubmitting}
-      theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
       height="100%"
       showToolbar
       onRun={runTests}
@@ -569,4 +572,15 @@ const CodingInterview = () => {
   );
 };
 
-export default CodingInterview;
+/**
+ * Wrapped at the export, not inside the component: the device check has to
+ * run BEFORE any proctoring effect mounts, and a hook inside would already
+ * have requested fullscreen and started the webcam monitor.
+ */
+const CodingInterviewGuarded = () => (
+  <DesktopOnly activity="coding interview">
+    <CodingInterview />
+  </DesktopOnly>
+);
+
+export default CodingInterviewGuarded;

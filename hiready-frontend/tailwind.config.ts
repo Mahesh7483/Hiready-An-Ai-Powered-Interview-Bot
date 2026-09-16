@@ -2,6 +2,12 @@ import type { Config } from "tailwindcss";
 import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
+  // Configured, never implemented. No ThemeProvider was ever mounted, so the
+  // ~17 dark: utilities scattered through the pages have never matched a
+  // single element and next-themes has been removed. Kept because the
+  // machinery is one provider away IF someone designs a dark theme — but note
+  // that mounting one today would ship 40+ pages of dark styling nobody has
+  // ever looked at, which is a regression dressed as a feature.
   darkMode: ["class"],
   content: ["./pages/**/*.{ts,tsx}", "./components/**/*.{ts,tsx}", "./app/**/*.{ts,tsx}", "./src/**/*.{ts,tsx}"],
   prefix: "",

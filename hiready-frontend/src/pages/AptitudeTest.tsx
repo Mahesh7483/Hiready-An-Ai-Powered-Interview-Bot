@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
+import { DesktopOnly } from "@/components/DesktopOnly";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -821,4 +822,15 @@ const AptitudeTest = (props: AptitudeTestProps) => {
   );
 };
 
-export default AptitudeTest;
+/**
+ * Wrapped at the export, not inside the component: the device check has to
+ * run BEFORE any proctoring effect mounts, and a hook inside would already
+ * have requested fullscreen and started the webcam monitor.
+ */
+const AptitudeTestGuarded = () => (
+  <DesktopOnly activity="aptitude test">
+    <AptitudeTest />
+  </DesktopOnly>
+);
+
+export default AptitudeTestGuarded;
