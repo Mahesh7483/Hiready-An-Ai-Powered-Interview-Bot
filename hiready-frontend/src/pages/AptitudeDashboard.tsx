@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, Legend,
 } from "recharts";
-import { API_BASE_URL, getAuthHeaders, apiJson } from "@/lib/api";
+import { API_BASE_URL, getAuthHeaders, apiJson, apiFetch } from "@/lib/api";
 
 interface AnalyticsData {
   totalTests: number;
@@ -47,9 +47,7 @@ const fmtSec = (ms: number): string => (ms > 0 ? `${Math.round(ms / 1000)}s` : "
 
 const fetchAnalytics = async (): Promise<AnalyticsData> => {
   // Identity is derived server-side from the JWT
-  const response = await fetch(`${API_BASE_URL}/questions/analytics/me`, {
-    headers: getAuthHeaders(),
-  });
+  const response = await apiFetch(`/questions/analytics/me`, {});
   if (!response.ok) throw new Error("Failed to fetch analytics");
   return response.json();
 };

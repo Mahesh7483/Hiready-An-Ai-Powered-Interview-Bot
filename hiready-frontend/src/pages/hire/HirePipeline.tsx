@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import HireLayout from "@/components/hire/HireLayout";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +21,7 @@ const HirePipeline = () => {
   const [title, setTitle] = useState("");
   const [creating, setCreating] = useState(false);
 
-  const { data, isLoading } = useQuery({ queryKey: ["hire", "jobs"], queryFn: hireAPI.listJobs });
+  const { data, isLoading, isError, error, refetch } = useQuery({ queryKey: ["hire", "jobs"], queryFn: hireAPI.listJobs });
 
   const createJob = useMutation({
     mutationFn: () => hireAPI.createJob({ title: title.trim() }),
@@ -75,6 +76,10 @@ const HirePipeline = () => {
           <Loader2 className="w-5 h-5 animate-spin" />
           <span className="text-sm">Loading your pipeline…</span>
         </div>
+      ) : isError || data === undefined ? (
+        // Before this branch a failed request rendered "No jobs yet",
+        // inviting a recruiter to re-create work that already exists.
+        <QueryError what="your jobs" error={error} onRetry={() => refetch()} />
       ) : jobs.length === 0 ? (
         <Card className="border border-border">
           <CardHeader>

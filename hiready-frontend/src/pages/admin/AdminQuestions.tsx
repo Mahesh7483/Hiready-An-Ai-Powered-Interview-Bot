@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Upload, Search } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -212,7 +213,14 @@ const AdminQuestions = () => {
                   </TableRow>
                 ))}
 
-              {!questionsQuery.isLoading && data?.questions.length === 0 && (
+              {!questionsQuery.isLoading && (questionsQuery.isError || questionsQuery.data === undefined) && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-8">
+                    <QueryError compact what="questions" error={questionsQuery.error} onRetry={() => questionsQuery.refetch()} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!questionsQuery.isLoading && !questionsQuery.isError && data?.questions.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
                     No questions found

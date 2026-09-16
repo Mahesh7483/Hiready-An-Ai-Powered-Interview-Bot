@@ -1,4 +1,5 @@
-﻿import { apiJson, getAuthHeaders, API_BASE_URL } from "./api";
+import { apiFetch } from "@/lib/api";
+import { apiJson, getAuthHeaders, API_BASE_URL } from "./api";
 
 // ── Resume analysis history ────────────────────────────────────────────
 export interface ResumeHistoryItem {
@@ -21,9 +22,9 @@ export async function saveResumeAnalysis(payload: {
   resultJson: unknown;
   sourceText?: string;
 }): Promise<string | null> {
-  const res = await fetch(`${API_BASE_URL}/resumes`, {
+  const res = await apiFetch(`/resumes`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) return null;
@@ -99,9 +100,9 @@ export async function saveInterviewSession(payload: {
   metricsJson?: unknown;
   interviewType?: "technical" | "behavioral";
 }): Promise<string | null> {
-  const res = await fetch(`${API_BASE_URL}/interviews/sessions`, {
+  const res = await apiFetch(`/interviews/sessions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
   if (!res.ok) return null;
@@ -113,9 +114,9 @@ export async function attachInterviewAnalysis(
   id: string,
   analysisJson: unknown
 ): Promise<void> {
-  await fetch(`${API_BASE_URL}/interviews/sessions/${id}/analysis`, {
+  await apiFetch(`/interviews/sessions/${id}/analysis`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ analysisJson }),
   }).catch(() => {});
 }

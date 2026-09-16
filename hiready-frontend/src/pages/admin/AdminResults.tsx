@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -173,7 +174,14 @@ const AdminResults = () => {
                   </TableRow>
                 ))}
 
-              {!resultsQuery.isLoading && data?.results.length === 0 && (
+              {!resultsQuery.isLoading && (resultsQuery.isError || resultsQuery.data === undefined) && (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-8">
+                    <QueryError compact what="results" error={resultsQuery.error} onRetry={() => resultsQuery.refetch()} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!resultsQuery.isLoading && !resultsQuery.isError && data?.results.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-10 text-muted-foreground">
                     No results found

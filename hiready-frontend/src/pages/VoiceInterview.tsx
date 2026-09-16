@@ -771,6 +771,11 @@ const VoiceInterviewContent = () => {
       const errorMsg = getErrorMessage(error);
       toast.error(errorMsg);
       setCaption(`❌ ${errorMsg}`);
+      // Without this the UI stays in "AI Interviewer is preparing…" forever:
+      // isAISpeaking is set before the call and only cleared on the happy path.
+      // It never surfaced while getInitialQuestion swallowed its own errors and
+      // returned a canned question instead of throwing.
+      setIsAISpeaking(false);
     }
   };
 

@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, ChevronLeft, ChevronRight, Upload, Search, Code } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,7 +113,8 @@ const AdminCodingQuestions = () => {
             <TableHeader><TableRow><TableHead className="min-w-[260px]">Title</TableHead><TableHead>Category</TableHead><TableHead>Difficulty</TableHead><TableHead>Tests</TableHead><TableHead>Published</TableHead><TableHead className="w-24">Actions</TableHead></TableRow></TableHeader>
             <TableBody>
               {q.isLoading && [...Array(5)].map((_,i)=> <TableRow key={i}>{[...Array(6)].map((_,j)=> <TableCell key={j}><Skeleton className="h-4 w-full" /></TableCell>)}</TableRow>)}
-              {!q.isLoading && q.data?.questions.length===0 && <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No questions</TableCell></TableRow>}
+              {!q.isLoading && (q.isError || q.data === undefined) && <TableRow><TableCell colSpan={6} className="py-8"><QueryError compact what="coding questions" error={q.error} onRetry={() => q.refetch()} /></TableCell></TableRow>}
+              {!q.isLoading && !q.isError && q.data?.questions.length===0 && <TableRow><TableCell colSpan={6} className="text-center py-10 text-muted-foreground">No questions</TableCell></TableRow>}
               {q.data?.questions.map((c)=> (
                 <TableRow key={c._id}>
                   <TableCell className="max-w-md"><span className="line-clamp-1 text-sm font-medium">{c.title}</span><span className="text-xs text-muted-foreground truncate block">{c.slug}</span></TableCell>

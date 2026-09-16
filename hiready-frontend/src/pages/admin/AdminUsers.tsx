@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Search, ChevronLeft, ChevronRight, Trash2, Loader2, Eye, Download } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -166,7 +167,14 @@ const AdminUsers = () => {
                   </TableRow>
                 ))}
 
-              {!usersQuery.isLoading && data?.users.length === 0 && (
+              {!usersQuery.isLoading && (usersQuery.isError || usersQuery.data === undefined) && (
+                <TableRow>
+                  <TableCell colSpan={6} className="py-8">
+                    <QueryError compact what="users" error={usersQuery.error} onRetry={() => usersQuery.refetch()} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!usersQuery.isLoading && !usersQuery.isError && data?.users.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={6} className="text-center py-10 text-muted-foreground">
                     No users found

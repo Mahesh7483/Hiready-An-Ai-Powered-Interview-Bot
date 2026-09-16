@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,10 +41,13 @@ const Leaderboard = () => {
   const [tab, setTab] = useState<"aptitude" | "interview">("aptitude");
   const [range, setRange] = useState<"week" | "all">("week");
   const [rows, setRows] = useState<(LeaderboardRow | InterviewLeaderboardRow)[] | null>(null);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setRows(null);
+    setLoadError(null);
     (async () => {
       try {
         const data =
@@ -54,13 +58,22 @@ const Leaderboard = () => {
             : await apiJson<{ leaderboard: InterviewLeaderboardRow[] }>(
                 `/interviews/sessions/leaderboard`
               );
-        if (!cancelled) setRows(data.leaderboard ?? []);
-      } catch {
-        if (!cancelled) setRows([]);
+        if (!cancelled) {
+          setRows(data.leaderboard ?? []);
+          setLoadError(null);
+        }
+      } catch (e) {
+        // setRows([]) here rendered "No results yet. Take a timed test to
+        // appear here!" — telling a user their result is missing when the
+        // truth is that we could not ask.
+        if (!cancelled) {
+          setRows(null);
+          setLoadError(e instanceof Error ? e : new Error("Request failed"));
+        }
       }
     })();
     return () => { cancelled = true; };
-  }, [tab, range]);
+  }, [tab, range, reloadKey]);
 
   return (
     <DashboardLayout>
@@ -139,7 +152,16 @@ const Leaderboard = () => {
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-0">
-            {rows === null ? (
+            {/* The error branch comes first: rows stays null on failure, so
+                without it a dead endpoint fell through to the spinner and then
+                to "No results yet", which reads as "you have not qualified". */}
+            {loadError ? (
+              <QueryError
+                what="the leaderboard"
+                error={loadError}
+                onRetry={() => setReloadKey((k) => k + 1)}
+              />
+            ) : rows === null ? (
               <div className="flex justify-center py-12">
                 <Loader2 className="w-7 h-7 animate-spin text-primary" />
               </div>

@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { apiJson, getAuthHeaders, API_BASE_URL } from "./api";
 
 export type ViolationType =
@@ -22,8 +23,7 @@ const DEDUPE_MS = 8000;
 export async function reportViolationEvent(
   attemptId: string,
   type: ViolationType | string,
-  opts: { dedupeMs?: number } = {}
-) {
+  opts: { dedupeMs?: number } = {}) {
   const key = `assess-vio-${attemptId}-${type}`;
   const last = Number(sessionStorage.getItem(key) || 0);
   const now = Date.now();
@@ -40,9 +40,9 @@ export async function reportViolationEvent(
   } catch {
     // Fallback: raw fetch so a bad auth token never breaks the attempt UI
     try {
-      const res = await fetch(`${API_BASE_URL}/assessment/attempt/${attemptId}/violation`, {
+      const res = await apiFetch(`/assessment/attempt/${attemptId}/violation`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type }),
       });
       if (res.ok) sessionStorage.setItem(key, String(now));

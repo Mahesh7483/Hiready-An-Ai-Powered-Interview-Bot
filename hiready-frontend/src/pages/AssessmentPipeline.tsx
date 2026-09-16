@@ -8,7 +8,7 @@ import { CodeEditor } from "@/components/coding/CodeEditor";
 import { Loader2, Clock, Coffee, Mic, ShieldAlert, ArrowRight, Play, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { assessmentAPI, type AttemptDTO, type AssessmentSectionDTO } from "@/lib/assessmentApi";
-import { apiJson, getAuthHeaders, API_BASE_URL } from "@/lib/api";
+import { apiJson, apiFetch } from "@/lib/api";
 import { reportViolationEvent } from "@/lib/assessmentProctor";
 import { registerWebcamStream, captureWebcamSnapshot } from "@/lib/webcamSnap";
 
@@ -81,9 +81,8 @@ const AssessmentPipeline = () => {
     if (activeSection.type === "aptitude") {
       (async () => {
         try {
-          const res = await fetch(
-            `${API_BASE_URL}/assessment/attempt/${attempt._id}/section/${activeSection.index}/questions`,
-            { headers: getAuthHeaders() }
+          const res = await apiFetch(
+            `/assessment/attempt/${attempt._id}/section/${activeSection.index}/questions`
           );
           if (!res.ok) throw new Error("Failed to load questions");
           const qs: QuizQ[] = await res.json();
@@ -230,12 +229,12 @@ const AssessmentPipeline = () => {
     // Prefer graded run against the question's visible test cases when available
     const hasVisibleTests = (codingQuestion.testCases?.length ?? 0) > 0;
     const endpoint = hasVisibleTests
-      ? `${API_BASE_URL}/code/run-tests/${codingQuestion._id}`
-      : `${API_BASE_URL}/code/execute`;
+      ? `/code/run-tests/${codingQuestion._id}`
+      : `/code/execute`;
     try {
-      const res = await fetch(endpoint, {
+      const res = await apiFetch(endpoint, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           hasVisibleTests
             ? { code: codingCode, language: codingLang }

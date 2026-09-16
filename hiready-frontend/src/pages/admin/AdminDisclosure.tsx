@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -31,7 +32,7 @@ const ACTION: Record<DisclosureEvent["action"], { icon: typeof Eye; cls: string;
 const AdminDisclosure = () => {
   const [action, setAction] = useState("all");
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["admin", "disclosure", action],
     queryFn: async () => {
       const r = await apiFetch(`/admin/disclosure?limit=50${action !== "all" ? `&action=${action}` : ""}`);
@@ -93,6 +94,10 @@ const AdminDisclosure = () => {
         <div className="flex items-center gap-3 text-muted-foreground py-12">
           <Loader2 className="w-5 h-5 animate-spin" /> <span className="text-sm">Loading…</span>
         </div>
+      ) : isError || data === undefined ? (
+        // "Nothing disclosed yet" on a failed fetch would be a false
+        // all-clear on the audit trail of who saw candidate data.
+        <QueryError what="the disclosure log" error={error} onRetry={() => refetch()} />
       ) : events.length === 0 ? (
         <Card className="border border-border">
           <CardHeader>

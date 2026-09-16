@@ -132,8 +132,17 @@ app.use(express.json({ limit: '10mb' }));
  *
  * serverSelectionTimeoutMS defaults to 30s. With the database down, a login
  * took 30 seconds to return a generic 500; measured, not guessed. Five seconds
- * is long enough to ride out a reconnect and short enough that the caller gets
- * an answer rather than a hung tab.
+ * is long enough to ride out a blip and short enough that the caller gets an
+ * answer rather than a hung tab.
+ *
+ * But a short timeout needs the retry below, and this is the part that bites:
+ * mongoose auto-reconnects only after a connection has been ESTABLISHED. If
+ * the very first connect() rejects — the database is still starting, the
+ * container is not up yet, compose raced — nothing ever tries again and the
+ * API serves 500s until someone restarts it. The old 30s window usually hid
+ * this; at 5s it happens on any slow start. Observed here, not theorised: the
+ * API came up permanently disconnected from a Mongo container that was
+ * running fine seconds later.
  */
 if (process.env.NODE_ENV !== 'test') {
   if (!process.env.MONGO_URI) {
@@ -142,9 +151,27 @@ if (process.env.NODE_ENV !== 'test') {
       + 'For local development: mongodb://127.0.0.1:27017/hiready'
     );
   }
-  mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 5000 })
-    .then(() => console.log('MongoDB Connected'))
-    .catch((err) => console.error('DB Error:', err && err.message ? err.message : err));
+
+  const RETRY_DELAY_MS = 5000;
+
+  const connectWithRetry = async (attempt = 1) => {
+    try {
+      await mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 5000 });
+      console.log('MongoDB Connected');
+    } catch (err) {
+      // Keep trying forever rather than exiting: /api/health reports the
+      // degraded state and returns 503, so an orchestrator can see it, and a
+      // database that comes back is picked up without a manual restart.
+      console.error(
+        `DB Error (attempt ${attempt}):`,
+        err && err.message ? err.message : err,
+        `— retrying in ${RETRY_DELAY_MS / 1000}s`
+      );
+      setTimeout(() => connectWithRetry(attempt + 1), RETRY_DELAY_MS).unref();
+    }
+  };
+
+  connectWithRetry();
 }
 
 // 5. Root + test routes

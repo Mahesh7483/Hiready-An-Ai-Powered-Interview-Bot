@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +41,8 @@ const Mastery = () => {
   const [weakTopics, setWeakTopics] = useState<WeakTopic[]>([]);
   const [dueCount, setDueCount] = useState<number | null>(null);
   const [loadingData, setLoadingData] = useState(true);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,10 +56,29 @@ const Mastery = () => {
       if (results[0].status === "fulfilled") setReadiness(results[0].value);
       if (results[1].status === "fulfilled") setWeakTopics(results[1].value.weakTopics ?? []);
       if (results[2].status === "fulfilled") setDueCount(results[2].value.items?.length ?? 0);
+
+      /**
+       * allSettled without a rejected branch is how this page told a user with
+       * a full history that they had never scored anything: three failed
+       * fetches left every piece of state at its initial value, and the page
+       * rendered a readiness of "—", no weak topics, and "Nothing scored yet".
+       *
+       * Readiness is the one that decides what this page says. If it failed,
+       * say so. The other two degrade honestly on their own — an empty weak-
+       * topics list and a null due count both read as "nothing to show here",
+       * which is the truth when they are genuinely empty and a small, visible
+       * understatement when they are not.
+       */
+      if (results[0].status === "rejected") {
+        const reason = results[0].reason;
+        setLoadError(reason instanceof Error ? reason : new Error("Request failed"));
+      } else {
+        setLoadError(null);
+      }
       setLoadingData(false);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
 
   // The composer, client-side for now: the weakest pillar that has data decides
   // block 2. Pillars with no data rank first — you cannot improve what you have
@@ -122,6 +144,18 @@ const Mastery = () => {
             </>
           )}
         </div>
+
+        {/* Shown ABOVE the dashboard rather than replacing it: the recall and
+            practice links below still work when readiness is unavailable, and
+            taking them away would be its own kind of lie. */}
+        {!loadingData && loadError && (
+          <QueryError
+            what="your readiness scores"
+            error={loadError}
+            onRetry={() => setReloadKey((k) => k + 1)}
+            className="mb-8"
+          />
+        )}
 
         {/* Today's session — the one thing on this screen that matters */}
         <Card className="mb-8 border-0 shadow-lg bg-gradient-primary">
@@ -277,8 +311,10 @@ const Mastery = () => {
           </>
         )}
 
-        {/* Nothing attempted yet */}
-        {!loadingData && !readiness?.hasAnyData && (
+        {/* Nothing attempted yet. Suppressed on a load failure: readiness is
+            undefined either way, and "Nothing scored yet" beneath a "could not
+            load" banner contradicts it. */}
+        {!loadingData && !loadError && !readiness?.hasAnyData && (
           <Card className="border border-border">
             <CardHeader>
               <CardTitle>Nothing scored yet</CardTitle>

@@ -13,7 +13,7 @@ import type { ProctorEvent } from "@/lib/proctorLogger";
 import { useStrictProctoring } from "@/hooks/useStrictProctoring";
 import { DEFAULT_CONFIG, type AptitudeConfig } from "@/lib/aptitude";
 import { useAuth } from "@/hooks/useAuth";
-import { API_BASE_URL, getAuthHeaders } from "@/lib/api";
+import { API_BASE_URL, getAuthHeaders, apiFetch } from "@/lib/api";
 
 interface QuizQuestion {
   _id: string;
@@ -176,7 +176,7 @@ const AptitudeTest = (props: AptitudeTestProps) => {
         ? `${API_BASE_URL}/questions/quiz/${topic}/adaptive?${qs}`
         : `${API_BASE_URL}/questions/quiz/${topic}?${qs}`;
 
-      const response = await fetch(url, { headers: getAuthHeaders() });
+      const response = await fetch(url, {});
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.error || "Failed to load questions");
@@ -224,13 +224,13 @@ const AptitudeTest = (props: AptitudeTestProps) => {
     });
     try {
       const res = wasSaved
-        ? await fetch(`${API_BASE_URL}/questions/bookmarks/${qId}`, {
+        ? await apiFetch(`/questions/bookmarks/${qId}`, {
             method: "DELETE",
-            headers: getAuthHeaders(),
+            
           })
-        : await fetch(`${API_BASE_URL}/questions/bookmarks`, {
+        : await apiFetch(`/questions/bookmarks`, {
             method: "POST",
-            headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ questionId: qId }),
           });
       if (!res.ok) throw new Error("Request failed");
@@ -368,9 +368,9 @@ const AptitudeTest = (props: AptitudeTestProps) => {
       // page computed the total itself. The server is now the only grader: it
       // iterates the question ids IT locked at issue time, applies its own
       // answer key, and ignores anything score-shaped in this payload.
-      const saveResponse = await fetch(`${API_BASE_URL}/questions/quiz/save-result`, {
+      const saveResponse = await apiFetch(`/questions/quiz/save-result`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           attemptId,
           negativeMarking,

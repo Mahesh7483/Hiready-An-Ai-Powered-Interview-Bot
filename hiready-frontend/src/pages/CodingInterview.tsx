@@ -30,7 +30,7 @@ import {
   SubmissionResult, type CodeReview, type SubmissionOutcome,
 } from "@/components/coding/SubmissionResult";
 import { useStrictProctoring, type ProctoringMode } from "@/hooks/useStrictProctoring";
-import { API_BASE_URL, getAuthHeaders } from "@/lib/api";
+import { API_BASE_URL, getAuthHeaders, apiFetch } from "@/lib/api";
 import {
   codeKey, DEFAULT_CODE, DEFAULT_MINUTES, DURATION_CHOICES, LANGUAGES,
 } from "@/lib/coding";
@@ -104,7 +104,7 @@ const CodingInterview = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/code/questions?limit=100`, { headers: getAuthHeaders() });
+        const res = await apiFetch(`/code/questions?limit=100`, {});
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Failed to load (${res.status})`);
         const data = await res.json();
         if (!cancelled) setQuestions(data.questions ?? []);
@@ -146,9 +146,9 @@ const CodingInterview = () => {
     setReviewLoading(true);
     setReviewError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/ai/code-review`, {
+      const res = await apiFetch(`/ai/code-review`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: source, language, problemTitle: title, outcome: outcomeLabel }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Review failed (${res.status})`);
@@ -172,9 +172,9 @@ const CodingInterview = () => {
     submittingRef.current = true;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/code/submit/${question._id}`, {
+      const res = await apiFetch(`/code/submit/${question._id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: source, language }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Submission failed (${res.status})`);
@@ -245,9 +245,9 @@ const CodingInterview = () => {
     setExecutionResult(null);
     if (!isDesktop) setMobileTab("output");
     try {
-      const res = await fetch(`${API_BASE_URL}/code/run-tests/${question._id}`, {
+      const res = await apiFetch(`/code/run-tests/${question._id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, language }),
       });
       const data = await res.json().catch(() => ({}));
