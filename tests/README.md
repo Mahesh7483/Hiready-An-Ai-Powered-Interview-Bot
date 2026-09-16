@@ -4,7 +4,7 @@ Every suite in the project lives here rather than inside the two packages.
 
 ```
 tests/
-  backend/           22 Jest suites · 361 tests
+  backend/           22 Jest suites · 387 tests
     support/
       paths.js       resolves the code under test
       hireDb.js      in-memory model mocks for the hire suite

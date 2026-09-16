@@ -125,15 +125,26 @@ describe('a claim in a schema comment matches the code', () => {
     expect(model).toMatch(/NOT ENFORCED/);
   });
 
-  test('and no route has quietly started creating memberships since', () => {
-    // If one ever does, this fails and the comment above must be revisited.
+  /**
+   * Walk once, so the scan's REACH can be asserted separately from its result.
+   *
+   * The first version of this only checked that the offender list was empty —
+   * which is exactly how a broken walker passes. A wrong root, a typo'd
+   * extension filter or a regex that never matches all produce an empty list
+   * and a green test, and the conclusion drawn from it ("nothing creates a
+   * membership") would be an artefact of the scan rather than a fact about
+   * the code.
+   */
+  const scanForMembershipCreators = () => {
     const creators = [];
+    let filesScanned = 0;
     const walk = (dir) => {
       fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
         if (e.name === 'node_modules') return;
         const full = path.join(dir, e.name);
         if (e.isDirectory()) return walk(full);
         if (!e.name.endsWith('.js')) return;
+        filesScanned += 1;
         const src = fs.readFileSync(full, 'utf8');
         if (/CompanyMembership\s*\.\s*(create|insertMany|findOneAndUpdate)/.test(src)) {
           creators.push(path.relative(backend(), full).split(path.sep).join('/'));
@@ -142,6 +153,25 @@ describe('a claim in a schema comment matches the code', () => {
     };
     walk(backend('routes'));
     walk(backend('services'));
+    return { creators, filesScanned };
+  };
+
+  test('the scan actually reached the route and service trees', () => {
+    const { filesScanned } = scanForMembershipCreators();
+    expect(filesScanned).toBeGreaterThan(15);
+  });
+
+  test('its regex matches a real creation call when one is present', () => {
+    // Proves the pattern, not just the absence. scripts/smokeHireFlow.js is
+    // the one place that creates a membership, and it is outside the scanned
+    // trees on purpose — so it doubles as a positive control.
+    const smoke = fs.readFileSync(backend('scripts/smokeHireFlow.js'), 'utf8');
+    expect(/CompanyMembership\s*\.\s*(create|insertMany|findOneAndUpdate)/.test(smoke)).toBe(true);
+  });
+
+  test('and no route has quietly started creating memberships since', () => {
+    // If one ever does, this fails and the seats comment must be revisited.
+    const { creators } = scanForMembershipCreators();
     expect(creators).toEqual([]);
   });
 });

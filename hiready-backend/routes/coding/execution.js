@@ -257,7 +257,16 @@ router.post('/validate', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/languages', (req, res) => {
+/**
+ * The only route in this file that did not require a token.
+ *
+ * It returns a static list and leaks nothing, so this is consistency rather
+ * than a breach — but "every sibling is guarded and this one is not" is how a
+ * genuine gap hides in plain sight later, and nothing needs this list before
+ * signing in. Found by scripts/audit-routes.js, which is worth running when
+ * adding a route.
+ */
+router.get('/languages', requireAuth, (req, res) => {
   const languages = [
     { id: 'python', name: 'Python', extension: 'py', version: '3.11' },
     { id: 'javascript', name: 'JavaScript (Node.js)', extension: 'js', version: '20.x' },

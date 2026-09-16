@@ -163,10 +163,15 @@ its history. See [SECURITY.md](SECURITY.md) — those credentials need rotating.
 | `/practice/assessment` | Timed multi-section assessments with anti-cheat |
 | `/privacy` | Every company that can currently see you, with one-click revoke |
 
-Readiness is computed **server-side only**, in `routes/readinessRoutes.js`:
+Readiness is computed **server-side only**, in `services/readiness.js`:
 interview 40, aptitude 30, coding 20, resume 10, renormalised when a pillar has
 no data. The client renders that number and never recomputes it — two formulas
 inevitably disagree, and the student is shown the one that is wrong.
+
+The same service decides what `GET /api/mastery/today` puts in the "Today's
+session" card, for exactly that reason: the card used to pick the weakest
+pillar in the browser with its own copy of the rule, so it agreed with the
+score beside it only by coincidence.
 
 ---
 
@@ -232,7 +237,7 @@ opt-in, which is acceptable for local self-hosting only.
 
 Two layers, because they fail differently.
 
-**`npm test`** — 293 tests across 19 suites. Models are mocked, so this proves
+**`npm test`** — 387 tests across 22 suites. Models are mocked, so this proves
 logic: middleware ordering, scope derivation, refusal shape, compiled schema
 shape, and the data-access boundary. No database required.
 
@@ -254,6 +259,13 @@ cd hiready-frontend && npm run typecheck && npm run lint && npm run build
 ```
 
 `npm run smoke` additionally needs MongoDB running and a populated `.env`.
+
+**`npm run audit:routes`** prints every mounted endpoint and which of them
+answer without a token. It walks the live Express stack rather than the
+source, so it reflects what is actually mounted. Its output is validated
+against real requests by tests/backend/routeAuthorization.test.js, which sends
+them — introspection got this wrong twice while it was being written, and a
+route audit that under-counts open endpoints is worse than none.
 
 **CI.** `.github/workflows/ci.yml` runs all of the above on every pull request:
 frontend lint, typecheck, Vitest and build; backend lint, syntax check, the

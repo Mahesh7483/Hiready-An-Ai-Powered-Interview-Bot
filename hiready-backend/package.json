@@ -17,7 +17,8 @@
     "seed": "node scripts/seed.js",
     "seed:export": "node scripts/export-seed.js",
     "exp:check": "node experiments/check-pipeline-sync.js && node experiments/check-results-freshness.js",
-    "exp:estimate": "node experiments/run-all.js --estimate"
+    "exp:estimate": "node experiments/run-all.js --estimate",
+    "audit:routes": "node scripts/audit-routes.js"
   },
   "keywords": [],
   "author": "",
