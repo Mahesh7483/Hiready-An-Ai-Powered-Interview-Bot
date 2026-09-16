@@ -28,6 +28,21 @@ node experiments/exp1_structured_output.js
 Your `.env` must have `GROQ_API_KEY` (exp1–3), plus `MONGO_URI` and
 `JWT_SECRET` for exp4 and `DEEPGRAM_API_KEY` for exp6.
 
+## Before you cite anything
+
+Two checks, and they answer different questions:
+
+```sh
+cd hiready-backend
+node experiments/check-pipeline-sync.js       # does lib/pipeline.js still match routes/aiRoutes.js?
+node experiments/check-results-freshness.js   # were the stored results produced against the current code?
+```
+
+The first can pass while every committed number describes a pipeline from two
+weeks ago — that was the actual state of this repository. See
+[RESULTS.md](RESULTS.md) for what is in `out/`, which profile produced it, and
+what each result may and may not be used to claim.
+
 ## Just run this
 
 ```sh
