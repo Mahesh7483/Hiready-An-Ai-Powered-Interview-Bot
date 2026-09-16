@@ -50,26 +50,67 @@ Requires Node 20 or newer.
 
 ### Manual
 
+You need Node 20+ and a MongoDB you can reach.
+
 ```sh
 git clone https://github.com/Mahesh7483/Hiready-An-Ai-Powered-Interview-Bot.git
 cd Hiready-An-Ai-Powered-Interview-Bot
 ```
 
-Create `hiready-backend/.env` and `hiready-frontend/.env` using the
-[Configuration](#configuration) table below, then:
+**1. Configure.** Each app ships a commented template. Copy it and fill in the
+values — the comments say which are required and what breaks without each.
 
 ```sh
-cd hiready-backend && npm install && npm run dev     # http://localhost:5000
+cp env.example .env                                   # docker compose only
+cp hiready-backend/env.example  hiready-backend/.env
+cp hiready-frontend/env.example hiready-frontend/.env
 ```
 
+`JWT_SECRET` must be at least 32 characters; the API refuses to boot below
+that. Generate one:
+
 ```sh
-cd hiready-frontend && npm install && npm run dev    # http://localhost:8080
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
+
+**2. Install and seed.** The seed step is not optional — without it the app
+comes up completely empty, with no questions to practise on.
+
+```sh
+npm install                 # root: the two-app dev runner
+npm run install:all         # both apps
+npm run seed                # 89 aptitude questions, 6 coding problems, 1 template
+```
+
+**3. Run both.**
+
+```sh
+npm run dev                 # API on :5000, SPA on :8080
+```
+
+Or separately, if you prefer two terminals:
+
+```sh
+npm run dev:backend         # http://localhost:5000
+npm run dev:frontend        # http://localhost:8080
+```
+
+**4. Make yourself an admin** (optional — needed for `/admin`):
+
+```sh
+cd hiready-backend && node scripts/makeAdmin.js you@example.com
+```
+
+`GET /api/health` reports whether the database is reachable and which provider
+keys are configured. It returns 503 when it cannot serve, so it is worth
+checking first if something looks wrong.
 
 ### Docker
 
 ```sh
-docker compose up --build        # SPA :3000 · API :5000 · MongoDB :27017
+docker compose up --build        # SPA on :3000
+# The API and MongoDB are reachable only on the compose network — nginx
+# proxies /api and /socket.io to the backend, so :3000 is the only open port.
 ```
 
 Compose reads a `.env` at the repository root and refuses to start without
@@ -91,14 +132,24 @@ node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 | `GROQ_MODEL` | backend | optional | Overrides the default model |
 | `DEEPGRAM_API_KEY` | backend | for voice | Speech-to-text. The browser only ever receives 60-second scoped tokens |
 | `FIREBASE_PROJECT_ID` | backend | for Google sign-in | Verifies Firebase ID tokens (issuer and audience) |
-| `ADMIN_EMAILS` | backend | optional | Comma-separated addresses auto-promoted to admin |
+| `ADMIN_EMAILS` | backend | optional | Comma-separated addresses **eligible** for admin. Listing one grants nothing on its own — promotion also requires a verified identity (Google sign-in with `email_verified`), because signup proves nothing about who owns an address. Seed the first admin with `node scripts/makeAdmin.js` |
 | `CORS_ORIGINS` | backend | optional | Allowed browser origins. Defaults to localhost |
 | `ALLOW_UNSAFE_SANDBOX` | backend | optional | See [sandbox](#code-execution-sandbox). `1` opts in |
 | `PROCTOR_SNAPSHOT_RETENTION_DAYS` | backend | optional | Lifetime of stored webcam frames before the TTL index drops them. Default `90`. This is biometric data — set the shortest period your policy and jurisdiction allow, not the longest |
 | `VITE_API_URL` | frontend | yes | API base URL, e.g. `http://localhost:5000/api` |
 | `VITE_FIREBASE_*` | frontend | for Google sign-in | Firebase web config. These are public identifiers |
 
-Never commit a populated `.env`. All of them are gitignored.
+Every variable above is documented in the commented templates —
+`env.example`, `hiready-backend/env.example` and `hiready-frontend/env.example`.
+Copy those rather than working from this table.
+
+**Never commit a populated `.env`.** `.gitignore` blocks `.env` and `.env.*`
+at any depth, and CI fails the build if one is ever tracked. The templates are
+named `env.example` without a leading dot precisely so they cannot match those
+patterns and cannot be mistaken for a live file.
+
+Env files were committed to this repository twice in the past and are still in
+its history. See [SECURITY.md](SECURITY.md) — those credentials need rotating.
 
 ---
 
@@ -181,11 +232,11 @@ opt-in, which is acceptable for local self-hosting only.
 
 Two layers, because they fail differently.
 
-**`npm test`** — 199 tests across 14 suites. Models are mocked, so this proves
+**`npm test`** — 293 tests across 19 suites. Models are mocked, so this proves
 logic: middleware ordering, scope derivation, refusal shape, compiled schema
 shape, and the data-access boundary. No database required.
 
-**`npm run smoke`** — 37 checks against a real server and a real `mongod`. Each
+**`npm run smoke`** — 38 checks against a real server and a real `mongod`. Each
 run seeds under a unique tag, drives the real HTTP surface, and deletes
 everything afterwards including on failure.
 
@@ -204,6 +255,15 @@ cd hiready-frontend && npm run typecheck && npm run lint && npm run build
 
 `npm run smoke` additionally needs MongoDB running and a populated `.env`.
 
+**CI.** `.github/workflows/ci.yml` runs all of the above on every pull request:
+frontend lint, typecheck, Vitest and build; backend lint, syntax check, the
+Jest suite against a real `mongo:7` service, both smoke runs, and a boot check.
+A fourth job fails the build if any `.env` file is tracked or a template
+contains something shaped like a real key.
+
+This workflow existed, fully written, for the life of the repository and never
+ran once: `.gitignore` listed `.github/`, so it could not be committed.
+
 ---
 
 ## Scripts
@@ -220,6 +280,8 @@ cd hiready-frontend && npm run typecheck && npm run lint && npm run build
 | `npm run smoke:hire` | Employer product only |
 | `npm run typecheck` | Syntax check across all backend sources |
 | `npm run lint` / `npm run lint:fix` | ESLint |
+| `npm run seed` | Populate a fresh database (idempotent) |
+| `npm run seed:export` | Regenerate `seeds/aptitude.json` from a populated database |
 
 ### Frontend
 
@@ -229,7 +291,8 @@ cd hiready-frontend && npm run typecheck && npm run lint && npm run build
 | `npm run build` | Production build |
 | `npm run preview` | Serve the production build locally |
 | `npm run typecheck` | `tsc -b` |
-| `npm run lint` / `npm run lint:fix` | ESLint |
+| `npm test` | Vitest |
+| `npm run lint` | ESLint |
 
 ### Maintenance
 

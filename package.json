@@ -15,9 +15,11 @@
     "lint:backend": "npm run lint --prefix hiready-backend",
     "typecheck": "npm run typecheck --prefix hiready-frontend",
     "typecheck:frontend": "npm run typecheck --prefix hiready-frontend",
-    "test": "npm test --prefix hiready-backend && npm run typecheck --prefix hiready-frontend",
+    "test": "npm test --prefix hiready-backend && npm run typecheck --prefix hiready-frontend && npm run test --prefix hiready-frontend",
     "test:backend": "npm test --prefix hiready-backend",
-    "install:all": "npm ci --prefix hiready-backend && npm ci --prefix hiready-frontend"
+    "install:all": "npm ci --prefix hiready-backend && npm ci --prefix hiready-frontend",
+    "seed": "npm run seed --prefix hiready-backend",
+    "smoke": "npm run smoke --prefix hiready-backend"
   },
   "engines": {
     "node": ">=20"
