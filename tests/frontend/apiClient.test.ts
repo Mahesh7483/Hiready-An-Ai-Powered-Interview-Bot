@@ -16,7 +16,9 @@ import { join, relative, sep } from "path";
  * lands.
  */
 
-const SRC = join(__dirname, "..");
+// The tree under test is another package now, so this is anchored on the
+// repository root rather than on this file being next to the code.
+const SRC = join(__dirname, "..", "..", "hiready-frontend", "src");
 
 /** Calls made before a token exists. apiFetch skips its 401 redirect for these anyway. */
 const PRE_AUTH = ["/auth/signup", "/auth/login", "/auth/google"];

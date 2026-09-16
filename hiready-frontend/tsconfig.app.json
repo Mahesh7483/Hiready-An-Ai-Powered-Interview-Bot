@@ -24,8 +24,20 @@
     "noImplicitThis": true,
 
     "paths": {
-      "@/*": ["./src/*"]
-    }
+      "@/*": ["./src/*"],
+
+      // The suites are outside this package, so TypeScript's node_modules
+      // walk from their location never reaches ours and `vitest` resolves to
+      // nothing. Pinned explicitly rather than left to resolution order.
+      "vitest": ["./node_modules/vitest"]
+    },
+
+    // Same reason: a file outside rootDir needs somewhere to resolve
+    // ambient package types from.
+    "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["src"]
+  // The suites live at <repo>/tests/frontend, outside this package. Without
+  // them here tsc silently stops checking them — verified by planting a type
+  // error in a moved test and watching the build stay green.
+  "include": ["src", "../tests/frontend"]
 }

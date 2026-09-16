@@ -6,7 +6,11 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-const DIRECTORIES = ['routes', 'models', 'middleware', 'services', 'utils', 'scripts', '__tests__'];
+// '../tests/backend' because the suites live at <repo>/tests, not in this
+// package. scanDir() returns silently for a directory that does not exist, so
+// leaving the old '__tests__' here would have dropped every test file from the
+// check without failing or saying anything.
+const DIRECTORIES = ['routes', 'models', 'middleware', 'services', 'utils', 'scripts', '../tests/backend'];
 const ROOT_FILES = ['server.js', 'eslint.config.js', 'jest.config.js'];
 
 let errors = 0;

@@ -18,7 +18,7 @@ const { requireScope } = require('./access');
  *   TestResult, AptitudeAttempt  — practice history is not hiring evidence
  *   SavedQuestion, CodingSubmission
  *
- * __tests__/hireBoundary.test.js walks this file's transitive require graph
+ * tests/backend/hireBoundary.test.js walks this file's transitive require graph
  * and fails the build if any of those become reachable.
  */
 

@@ -1,3 +1,4 @@
+const { backend } = require('./support/paths');
 const fs = require('fs');
 const path = require('path');
 
@@ -13,7 +14,7 @@ const path = require('path');
  * exist — belongs to scripts/migrateUserIdTypes.js, which verifies it and exits
  * non-zero otherwise.
  */
-const BACKEND = path.resolve(__dirname, '..');
+const BACKEND = backend();
 const read = (rel) => fs.readFileSync(path.join(BACKEND, rel), 'utf8');
 
 /**

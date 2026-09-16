@@ -11,7 +11,7 @@ const mongoose = require('mongoose');
  *
  * Rules that go with it:
  *   - Nothing under routes/hire/** or services/hire/** may import this model.
- *     Enforced at build time by __tests__/hireBoundary.test.js, which derives
+ *     Enforced at build time by tests/backend/hireBoundary.test.js, which derives
  *     its forbidden list from policy/dataAccess.js.
  *   - Recruiters learn whether an assessment is trustworthy from
  *     AssessmentAttempt.integrityVerdict, never from here.

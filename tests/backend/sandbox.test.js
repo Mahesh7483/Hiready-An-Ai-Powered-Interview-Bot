@@ -1,3 +1,4 @@
+const { backend } = require('./support/paths');
 const fs = require('fs');
 const path = require('path');
 const {
@@ -5,7 +6,7 @@ const {
   buildRunCommand,
   createTempDir,
   cleanupTempDir,
-} = require('../services/sandbox');
+} = require(backend('services/sandbox'));
 
 describe('Sandbox service unit tests', () => {
   test('Supported languages have valid configuration properties', () => {

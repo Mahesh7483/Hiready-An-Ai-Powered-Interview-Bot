@@ -1,8 +1,9 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
+const { backend } = require('./support/paths');
 
 const fs = require('fs');
 const path = require('path');
-const { validateCodeReview } = require('../routes/aiRoutes')._internal;
+const { validateCodeReview } = require(backend('routes/aiRoutes'))._internal;
 
 /**
  * Guards POST /api/ai/code-review against the failure that emptied the resume
@@ -56,7 +57,7 @@ describe('the code review validator requires what the panel renders', () => {
 });
 
 describe('the route is wired safely', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'aiRoutes.js'), 'utf8');
+  const src = fs.readFileSync(backend('routes', 'aiRoutes.js'), 'utf8');
   const route = src.slice(src.indexOf("router.post('/code-review'"));
 
   test('it validates the payload before returning it', () => {

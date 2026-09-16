@@ -7,7 +7,7 @@ const { requireCompany, listMemberships } = require('../../middleware/company');
  * The recruiter surface.
  *
  * Nothing under this tree may import a model marked NEVER in
- * policy/dataAccess.js. __tests__/hireBoundary.test.js walks the transitive
+ * policy/dataAccess.js. tests/backend/hireBoundary.test.js walks the transitive
  * require graph from every file here and fails the build otherwise — so
  * evidence reaches these routes only through services/hire/readers.js.
  */

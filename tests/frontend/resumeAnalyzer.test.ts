@@ -7,7 +7,7 @@ import { describe, it, expect, vi } from "vitest";
 //    confirmed via its package.json main/exports), not a Node-safe build.
 // Both are mocked so only the real logic under test actually executes.
 // mammoth and ./api have no top-level side effects and are left real.
-vi.mock("./pdfWorker?worker", () => ({
+vi.mock("@/lib/pdfWorker?worker", () => ({
   default: class MockPdfWorker {},
 }));
 
@@ -16,7 +16,7 @@ vi.mock("pdfjs-dist", () => ({
   getDocument: vi.fn(),
 }));
 
-import { itemsToLines } from "./resumeAnalyzer";
+import { itemsToLines } from "@/lib/resumeAnalyzer";
 
 describe("itemsToLines", () => {
   it("returns an empty string for empty input", () => {

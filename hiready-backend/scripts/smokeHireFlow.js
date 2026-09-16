@@ -1,7 +1,7 @@
 /**
  * Live end-to-end check of the employer product, against a real database.
  *
- * WHY THIS EXISTS ALONGSIDE __tests__/hireFlow.test.js
+ * WHY THIS EXISTS ALONGSIDE tests/backend/hireFlow.test.js
  *
  * That suite mocks the models, so it proves the AUTHORIZATION LOGIC — middleware
  * ordering, scope derivation, refusal shape. It cannot prove that a mongoose

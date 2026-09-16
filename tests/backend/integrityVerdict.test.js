@@ -1,4 +1,5 @@
-const { deriveVerdict } = require('../services/integrity');
+const { backend } = require('./support/paths');
+const { deriveVerdict } = require(backend('services/integrity'));
 
 /**
  * The verdict is the ONLY integrity signal that crosses into hiring, so its
@@ -54,7 +55,7 @@ describe('every exit from an attempt stamps a verdict', () => {
   const fs = require('fs');
   const path = require('path');
   const src = fs.readFileSync(
-    path.join(__dirname, '..', 'routes', 'assessmentRoutes.js'), 'utf8'
+    backend('routes', 'assessmentRoutes.js'), 'utf8'
   );
 
   test('the normal completion path stamps one', () => {
@@ -97,13 +98,13 @@ describe('the verdict is the only integrity signal in the hiring domain', () => 
     // one import away from the recruiter tree.
     const fs = require('fs');
     const path = require('path');
-    expect(fs.existsSync(path.join(__dirname, '..', 'services', 'integrity.js'))).toBe(true);
-    expect(fs.existsSync(path.join(__dirname, '..', 'services', 'hire', 'integrity.js'))).toBe(false);
+    expect(fs.existsSync(backend('services', 'integrity.js'))).toBe(true);
+    expect(fs.existsSync(backend('services', 'hire', 'integrity.js'))).toBe(false);
   });
 
   test('the hire readers expose integrity but never violations', () => {
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '..', 'services', 'hire', 'readers.js'),
+      backend('services', 'hire', 'readers.js'),
       'utf8'
     );
     expect(src).toMatch(/integrityVerdict/);

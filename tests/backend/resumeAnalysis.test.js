@@ -1,8 +1,9 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
+const { backend } = require('./support/paths');
 
 const fs = require('fs');
 const path = require('path');
-const { validateResumeAnalysis, repairTruncatedJson, parseLLMJson } = require('../routes/aiRoutes')._internal;
+const { validateResumeAnalysis, repairTruncatedJson, parseLLMJson } = require(backend('routes/aiRoutes'))._internal;
 
 /**
  * Guards the resume report against the failure that emptied half of it.
@@ -107,7 +108,7 @@ describe('a truncated response is caught rather than papered over', () => {
 });
 
 describe('JSON-producing calls use constrained decoding', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'aiRoutes.js'), 'utf8');
+  const src = fs.readFileSync(backend('routes', 'aiRoutes.js'), 'utf8');
 
   test('groqChat sets response_format when asked for JSON', () => {
     // Free-form, the model intermittently writes a word where a number belongs
@@ -125,7 +126,7 @@ describe('JSON-producing calls use constrained decoding', () => {
 });
 
 describe('a quota error is not reported as an oversized resume', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'aiRoutes.js'), 'utf8');
+  const src = fs.readFileSync(backend('routes', 'aiRoutes.js'), 'utf8');
   const handler = src.slice(src.indexOf('if (isGroqRateLimit(err))'), src.indexOf('if (isGroqRateLimit(err))') + 900);
 
   test('413 and 429 produce different statuses', () => {
@@ -141,7 +142,7 @@ describe('a quota error is not reported as an oversized resume', () => {
 });
 
 describe('the route is configured to fit the schema it asks for', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'routes', 'aiRoutes.js'), 'utf8');
+  const src = fs.readFileSync(backend('routes', 'aiRoutes.js'), 'utf8');
 
   test('a length cutoff retries instead of falling through to repair', () => {
     // Without this, a bigger resume silently loses its tail again.

@@ -1,19 +1,23 @@
+const { backend } = require('./support/paths');
 /**
  * Phase A/B invariants, as tests rather than review comments.
  *
  * Models are mocked so this runs without a database — the point is the
  * authorization logic and the shape of the capability, not Mongo.
  */
+// jest.mock() is hoisted above every import, so its module path cannot use
+// the backend() helper — the factory would reference an uninitialised binding.
+// These stay literal relative paths by necessity, not by preference.
 
-jest.mock('../models/CandidateCompanyConsent', () => ({ findOne: jest.fn() }));
-jest.mock('../models/Company', () => ({ findById: jest.fn() }));
-jest.mock('../models/CompanyMembership', () => ({ findOne: jest.fn(), find: jest.fn() }));
+jest.mock('../../hiready-backend/models/CandidateCompanyConsent', () => ({ findOne: jest.fn() }));
+jest.mock('../../hiready-backend/models/Company', () => ({ findById: jest.fn() }));
+jest.mock('../../hiready-backend/models/CompanyMembership', () => ({ findOne: jest.fn(), find: jest.fn() }));
 
-const CandidateCompanyConsent = require('../models/CandidateCompanyConsent');
-const Company = require('../models/Company');
-const CompanyMembership = require('../models/CompanyMembership');
-const { candidateAccess, requireScope, scopesFor } = require('../services/hire/access');
-const { requireCompany } = require('../middleware/company');
+const CandidateCompanyConsent = require(backend('models/CandidateCompanyConsent'));
+const Company = require(backend('models/Company'));
+const CompanyMembership = require(backend('models/CompanyMembership'));
+const { candidateAccess, requireScope, scopesFor } = require(backend('services/hire/access'));
+const { requireCompany } = require(backend('middleware/company'));
 
 const CANDIDATE = '6a8d13f539fc72e44cfaa894';
 const COMPANY = '6a8aab87b931980132a1d724';
@@ -216,7 +220,7 @@ describe('invariant 10 — revocation stops future access only', () => {
   test('revocation touches no assessment or result collection', () => {
     // Structural check: the consent service must not reach evidence at all.
     const src = require('fs').readFileSync(
-      require('path').join(__dirname, '..', 'services', 'hire', 'consent.js'),
+      backend('services', 'hire', 'consent.js'),
       'utf8'
     );
     expect(src).not.toMatch(/AssessmentAttempt|TestResult|deleteMany|remove\(/);

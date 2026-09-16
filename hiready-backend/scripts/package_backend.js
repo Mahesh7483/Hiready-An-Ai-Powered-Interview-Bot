@@ -46,7 +46,7 @@ function copyDirRecursive(srcDir, destDir) {
 }
 
 // 4. Copy required directories
-['routes', 'models', 'services', 'middleware', 'utils', '__tests__', 'scripts', 'experiments'].forEach(d => {
+['routes', 'models', 'services', 'middleware', 'utils', 'scripts', 'experiments'].forEach(d => {
   const sp = path.join(srcBackend, d);
   const dp = path.join(dstBackend, d);
   if (fs.existsSync(sp)) {

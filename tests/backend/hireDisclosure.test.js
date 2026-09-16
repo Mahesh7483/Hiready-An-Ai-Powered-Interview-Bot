@@ -6,10 +6,11 @@
  * Structural where structure is what broke (an unscoped query, a missing role
  * gate), behavioural where behaviour is.
  */
+const { backend } = require('./support/paths');
 const fs = require('fs');
 const path = require('path');
 
-const read = (rel) => fs.readFileSync(path.join(__dirname, '..', rel), 'utf8');
+const read = (rel) => fs.readFileSync(backend(rel), 'utf8');
 
 // ── 1.1 invite emails ──────────────────────────────────────────────────────
 

@@ -33,7 +33,7 @@ module.exports = [
     },
   },
   {
-    files: ["__tests__/**/*.js", "**/*.test.js"],
+    files: ["**/*.test.js"], // the suites now live at <repo>/tests; see the root eslint.config.js
     languageOptions: {
       globals: {
         describe: "readonly",

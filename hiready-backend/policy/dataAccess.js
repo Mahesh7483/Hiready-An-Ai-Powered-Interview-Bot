@@ -1,7 +1,7 @@
 /**
  * The single source of truth for who may read what.
  *
- * This file is read by machines and people. __tests__/hireBoundary.test.js
+ * This file is read by machines and people. tests/backend/hireBoundary.test.js
  * DERIVES its forbidden-import list from the NEVER rows below, so adding a new
  * NEVER entry automatically extends the build-time check — the list is never
  * maintained by hand in two places.

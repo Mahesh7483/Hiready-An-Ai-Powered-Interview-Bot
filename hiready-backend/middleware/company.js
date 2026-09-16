@@ -106,7 +106,7 @@ async function requireCompany(req, res, next) {
       companyId: String(membership.companyId),
       // Pre-cast for aggregation pipelines, which do no casting of their own.
       // Exposed here so no route has to construct an ObjectId from a request
-      // value — that pattern is what __tests__/userIdIntegrity.test.js forbids,
+      // value — that pattern is what tests/backend/userIdIntegrity.test.js forbids,
       // because the guarded and unguarded forms look identical at a glance.
       companyOid: membership.companyId,
       role: membership.role,

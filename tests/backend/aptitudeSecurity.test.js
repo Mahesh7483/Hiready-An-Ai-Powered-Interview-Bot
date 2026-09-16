@@ -1,17 +1,18 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/hiready-test';
+const { backend } = require('./support/paths');
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 
-const app = require('../server');
-const Question = require('../models/Question');
-const AptitudeAttempt = require('../models/AptitudeAttempt');
-const TestResult = require('../models/TestResult');
-const User = require('../models/User');
-const InterviewSession = require('../models/InterviewSession');
-const ProctorLog = require('../models/ProctorLog');
+const app = require(backend('server'));
+const Question = require(backend('models/Question'));
+const AptitudeAttempt = require(backend('models/AptitudeAttempt'));
+const TestResult = require(backend('models/TestResult'));
+const User = require(backend('models/User'));
+const InterviewSession = require(backend('models/InterviewSession'));
+const ProctorLog = require(backend('models/ProctorLog'));
 
 describe('Aptitude Zero-Client-Trust Grading & Data Privacy Cascade Deletion', () => {
   const userAId = new mongoose.Types.ObjectId();

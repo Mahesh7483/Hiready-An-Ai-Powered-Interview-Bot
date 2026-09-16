@@ -1,5 +1,6 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/hiready-test';
+const { backend } = require('./support/paths');
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
@@ -27,8 +28,11 @@ const jwt = require('jsonwebtoken');
 
 // The mocks keep this suite off the network and off Mongo: we are testing the
 // limiter in front of the routes, not the routes themselves.
-jest.mock('../middleware/auth', () => {
-  const actual = jest.requireActual('../middleware/auth');
+// jest.mock() is hoisted above every import, so its module path cannot use
+// the backend() helper — the factory would reference an uninitialised binding.
+// These stay literal relative paths by necessity, not by preference.
+jest.mock('../../hiready-backend/middleware/auth', () => {
+  const actual = jest.requireActual('../../hiready-backend/middleware/auth');
   const jsonwebtoken = require('jsonwebtoken');
   return {
     ...actual,
@@ -49,7 +53,7 @@ jest.mock('../middleware/auth', () => {
   };
 });
 
-const app = require('../server');
+const app = require(backend('server'));
 
 const tokenFor = (id) => jwt.sign({ id }, process.env.JWT_SECRET, { algorithm: 'HS256' });
 
@@ -131,14 +135,14 @@ describe('the key generator is called correctly', () => {
 
     const fs = require('fs');
     const path = require('path');
-    const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+    const src = fs.readFileSync(backend('server.js'), 'utf8');
     expect(src).not.toMatch(/ipKeyGenerator\(req\)/);
   });
 
   test('requireAuth is mounted ahead of the limiter it feeds', () => {
     const fs = require('fs');
     const path = require('path');
-    const src = fs.readFileSync(path.join(__dirname, '..', 'server.js'), 'utf8');
+    const src = fs.readFileSync(backend('server.js'), 'utf8');
     const mount = src.match(/app\.use\('\/api\/ai'[^)]*\)/);
     expect(mount).not.toBeNull();
     const order = mount[0];

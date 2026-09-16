@@ -1,4 +1,5 @@
-const { calculateSectionScore, calculateReadinessScore } = require('../services/assessmentScoring');
+const { backend } = require('./support/paths');
+const { calculateSectionScore, calculateReadinessScore } = require(backend('services/assessmentScoring'));
 
 describe('Assessment scoring & business logic rules', () => {
 

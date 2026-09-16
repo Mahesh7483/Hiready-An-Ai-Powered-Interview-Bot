@@ -1,3 +1,4 @@
+const { backend, frontend } = require('./support/paths');
 /**
  * End-to-end guarantees of the employer product, as tests.
  *
@@ -13,29 +14,32 @@
  */
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.NODE_ENV = 'test';
+// jest.mock() is hoisted above every import, so its module path cannot use
+// the backend() helper — the factory would reference an uninitialised binding.
+// These stay literal relative paths by necessity, not by preference.
 
-jest.mock('../models/Company', () => require('./support/hireDb').collection('companies'));
-jest.mock('../models/CompanyMembership', () => require('./support/hireDb').collection('memberships'));
-jest.mock('../models/CandidateCompanyConsent', () => require('./support/hireDb').collection('consents'));
-jest.mock('../models/User', () => require('./support/hireDb').collection('users'));
-jest.mock('../models/AssessmentTemplate', () => require('./support/hireDb').collection('templates'));
-jest.mock('../models/AssessmentAttempt', () => require('./support/hireDb').collection('attempts'));
-jest.mock('../models/InterviewSession', () => require('./support/hireDb').collection('interviews'));
-jest.mock('../models/ResumeAnalysis', () => require('./support/hireDb').collection('resumes'));
-jest.mock('../models/DisclosureAudit', () => require('./support/hireDb').collection('audits'));
-jest.mock('../models/Job', () => require('./support/hireDb').collection('jobs'));
-jest.mock('../models/Application', () => {
+jest.mock('../../hiready-backend/models/Company', () => require('./support/hireDb').collection('companies'));
+jest.mock('../../hiready-backend/models/CompanyMembership', () => require('./support/hireDb').collection('memberships'));
+jest.mock('../../hiready-backend/models/CandidateCompanyConsent', () => require('./support/hireDb').collection('consents'));
+jest.mock('../../hiready-backend/models/User', () => require('./support/hireDb').collection('users'));
+jest.mock('../../hiready-backend/models/AssessmentTemplate', () => require('./support/hireDb').collection('templates'));
+jest.mock('../../hiready-backend/models/AssessmentAttempt', () => require('./support/hireDb').collection('attempts'));
+jest.mock('../../hiready-backend/models/InterviewSession', () => require('./support/hireDb').collection('interviews'));
+jest.mock('../../hiready-backend/models/ResumeAnalysis', () => require('./support/hireDb').collection('resumes'));
+jest.mock('../../hiready-backend/models/DisclosureAudit', () => require('./support/hireDb').collection('audits'));
+jest.mock('../../hiready-backend/models/Job', () => require('./support/hireDb').collection('jobs'));
+jest.mock('../../hiready-backend/models/Application', () => {
   const model = require('./support/hireDb').collection('applications');
   // Taken from the real model, never retyped. The first draft of this mock
   // hand-listed the stages and got two of them wrong ('applied', 'assessed'),
   // which the suite could not notice — the route validated against the mock's
   // own invention, so it agreed with itself while disagreeing with production.
-  const real = jest.requireActual('../models/Application');
+  const real = jest.requireActual('../../hiready-backend/models/Application');
   model.STAGES = real.STAGES;
   model.RECRUITER_STAGES = real.RECRUITER_STAGES;
   return model;
 });
-jest.mock('../models/CompanyInvite', () => {
+jest.mock('../../hiready-backend/models/CompanyInvite', () => {
   const crypto = require('crypto');
   const model = require('./support/hireDb').collection('invites');
   model.hashToken = (t) => crypto.createHash('sha256').update(String(t)).digest('hex');
@@ -50,8 +54,8 @@ const crypto = require('crypto');
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
 const { db, seed, reset, oid } = require('./support/hireDb');
-const app = require('../server');
-const Application = jest.requireActual('../models/Application');
+const app = require(backend('server'));
+const Application = jest.requireActual('../../hiready-backend/models/Application');
 
 const ids = {
   companyA: oid(),
@@ -137,7 +141,7 @@ describe('the frontend stage list matches the model', () => {
     // a stage the client offers but the model rejects is a 400 the user sees
     // as "nothing happened when I dragged the card".
     const src = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hiready-frontend', 'src', 'lib', 'hireApi.ts'),
+      frontend('src', 'lib', 'hireApi.ts'),
       'utf8'
     );
     const match = src.match(/RECRUITER_STAGES:\s*PipelineStage\[\]\s*=\s*\[([^\]]*)\]/);
@@ -153,7 +157,7 @@ describe('the frontend stage list matches the model', () => {
     // It is the candidate's lever. Offering it to a recruiter would let them
     // record someone as having left of their own accord.
     const src = fs.readFileSync(
-      path.join(__dirname, '..', '..', 'hiready-frontend', 'src', 'lib', 'hireApi.ts'),
+      frontend('src', 'lib', 'hireApi.ts'),
       'utf8'
     );
     const match = src.match(/RECRUITER_STAGES:\s*PipelineStage\[\]\s*=\s*\[([^\]]*)\]/);

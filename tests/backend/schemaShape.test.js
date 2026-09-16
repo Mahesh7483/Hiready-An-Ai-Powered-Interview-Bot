@@ -1,3 +1,4 @@
+const { backend } = require('./support/paths');
 const fs = require('fs');
 const path = require('path');
 const mongoose = require('mongoose');
@@ -26,7 +27,7 @@ const mongoose = require('mongoose');
  * the source text, because the source looked perfectly reasonable.
  */
 
-const MODELS = path.join(__dirname, '..', 'models');
+const MODELS = backend('models');
 
 /** Paths that MUST be arrays of subdocuments, with the fields each needs. */
 const SUBDOCUMENT_ARRAYS = [
@@ -147,7 +148,7 @@ describe('a projection never asks for a schema path it cannot name', () => {
    * extend: if a future schema adds another space-bearing path, this guard
    * covers it the moment it exists.
    */
-  const BACKEND_ROOT = path.join(__dirname, '..');
+  const BACKEND_ROOT = backend();
   const SRC_DIRS = ['routes', 'services'];
 
   /** Every schema path anywhere in models/ whose name contains whitespace. */

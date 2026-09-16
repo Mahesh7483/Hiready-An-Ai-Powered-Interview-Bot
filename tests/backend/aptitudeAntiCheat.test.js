@@ -1,3 +1,4 @@
+const { backend, frontend } = require('./support/paths');
 const fs = require('fs');
 const path = require('path');
 
@@ -18,8 +19,8 @@ const path = require('path');
  * show a route behaving; only this can show the dangerous route is gone.
  */
 
-const BACKEND = path.resolve(__dirname, '..');
-const FRONTEND = path.resolve(__dirname, '..', '..', 'hiready-frontend');
+const BACKEND = backend();
+const FRONTEND = frontend();
 const read = (p) => fs.readFileSync(p, 'utf8');
 
 const questionRoutes = read(path.join(BACKEND, 'routes', 'questionRoutes.js'));

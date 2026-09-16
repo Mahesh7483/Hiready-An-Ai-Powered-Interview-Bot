@@ -11,12 +11,26 @@ export default defineConfig({
      */
     alias: {
       "@": path.resolve(__dirname, "./src"),
+
+      /**
+       * The suites live at <repo>/tests/frontend, outside this package, so a
+       * bare specifier resolves from a directory whose node_modules walk never
+       * reaches this package's. That broke `vi.mock("pdfjs-dist")` silently:
+       * the mock registered under one module id and the source imported
+       * another, so the real browser build loaded and died on `DOMMatrix is
+       * not defined` at import time.
+       *
+       * Pinning the heavy browser-only dependencies to absolute paths makes
+       * both sides agree on the id being mocked.
+       */
+      "pdfjs-dist": path.resolve(__dirname, "node_modules/pdfjs-dist"),
+      mammoth: path.resolve(__dirname, "node_modules/mammoth"),
     },
   },
   test: {
     environment: "node",
     // .tsx is included so component tests are possible at all; they also need
     // environment "jsdom", which is a separate change.
-    include: ["src/**/*.test.{ts,tsx}"],
+    include: ["../tests/frontend/**/*.test.{ts,tsx}"],
   },
 });

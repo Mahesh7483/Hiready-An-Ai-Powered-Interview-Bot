@@ -1,6 +1,7 @@
+const { backend } = require('./support/paths');
 const fs = require('fs');
 const path = require('path');
-const { forbiddenForRecruiters, POLICY, NEVER } = require('../policy/dataAccess');
+const { forbiddenForRecruiters, POLICY, NEVER } = require(backend('policy/dataAccess'));
 
 /**
  * Build-time enforcement of the recruiter data boundary.
@@ -17,7 +18,7 @@ const { forbiddenForRecruiters, POLICY, NEVER } = require('../policy/dataAccess'
  * reporting the full path that reaches it.
  */
 
-const BACKEND = path.resolve(__dirname, '..');
+const BACKEND = backend();
 const RECRUITER_TREES = ['routes/hire', 'services/hire'];
 const FORBIDDEN = forbiddenForRecruiters();
 
@@ -106,9 +107,24 @@ describe('recruiter data boundary', () => {
     beforeAll(() => {
       fs.mkdirSync(FIXTURES, { recursive: true });
       // entry -> mid -> models/ProctorLog  (entry never names the model)
+      // localRequires() resolves a relative specifier against the file that
+      // contains it, so these must be relative to FIXTURES — and computed,
+      // not written by hand, since FIXTURES no longer sits inside the package
+      // it points into. A wrong path here resolves to nothing and the walker
+      // reports "clean", which is the failure mode these fixtures exist to
+      // rule out.
+      const rel = (target) =>
+        path.relative(FIXTURES, target).split(path.sep).join('/').replace(/\.js$/, '');
+
       fs.writeFileSync(path.join(FIXTURES, 'entry.js'), "require('./mid');\n");
-      fs.writeFileSync(path.join(FIXTURES, 'mid.js'), "require('../../../models/ProctorLog');\n");
-      fs.writeFileSync(path.join(FIXTURES, 'clean.js'), "require('../../../policy/dataAccess');\n");
+      fs.writeFileSync(
+        path.join(FIXTURES, 'mid.js'),
+        `require('${rel(backend('models/ProctorLog.js'))}');\n`
+      );
+      fs.writeFileSync(
+        path.join(FIXTURES, 'clean.js'),
+        `require('${rel(backend('policy/dataAccess.js'))}');\n`
+      );
     });
 
     afterAll(() => {
@@ -141,7 +157,7 @@ describe('recruiter data boundary', () => {
      */
     test('every model named anywhere in the table has a file', () => {
       const missing = [...new Set(POLICY.flatMap((row) => row.models))]
-        .filter((name) => !fs.existsSync(path.join(__dirname, '..', 'models', `${name}.js`)));
+        .filter((name) => !fs.existsSync(backend('models', `${name}.js`)));
       expect(missing).toEqual([]);
     });
 
@@ -150,7 +166,7 @@ describe('recruiter data boundary', () => {
       const forbidden = forbiddenForRecruiters();
       expect(forbidden.length).toBeGreaterThan(0);
       forbidden.forEach((name) => {
-        expect(fs.existsSync(path.join(__dirname, '..', 'models', `${name}.js`))).toBe(true);
+        expect(fs.existsSync(backend('models', `${name}.js`))).toBe(true);
       });
     });
   });

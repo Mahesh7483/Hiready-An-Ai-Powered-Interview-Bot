@@ -98,7 +98,7 @@ const apiLimiter = rateLimit({
  *      ever limited.
  *
  * Its test asserted on the source text of this file and passed throughout.
- * The replacement sends real requests; see __tests__/aiRateLimit.test.js.
+ * The replacement sends real requests; see tests/backend/aiRateLimit.test.js.
  */
 const aiLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,

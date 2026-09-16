@@ -1,5 +1,6 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || 'test-secret-for-ci-at-least-32-chars-long';
 process.env.MONGO_URI = process.env.MONGO_URI || 'mongodb://127.0.0.1:27017/hiready-test';
+const { backend } = require('./support/paths');
 
 const request = require('supertest');
 const jwt = require('jsonwebtoken');
@@ -7,12 +8,12 @@ const mongoose = require('mongoose');
 const { fork } = require('child_process');
 const path = require('path');
 
-const app = require('../server');
-const AptitudeAttempt = require('../models/AptitudeAttempt');
-const TestResult = require('../models/TestResult');
-const InterviewSession = require('../models/InterviewSession');
-const ProctorLog = require('../models/ProctorLog');
-const User = require('../models/User');
+const app = require(backend('server'));
+const AptitudeAttempt = require(backend('models/AptitudeAttempt'));
+const TestResult = require(backend('models/TestResult'));
+const InterviewSession = require(backend('models/InterviewSession'));
+const ProctorLog = require(backend('models/ProctorLog'));
+const User = require(backend('models/User'));
 
 describe('Failure Recovery, Interrupted Writes & Partial Deletion Fallback Tests', () => {
   const userId = new mongoose.Types.ObjectId();
@@ -505,7 +506,7 @@ describe('Failure Recovery, Interrupted Writes & Partial Deletion Fallback Tests
       });
 
       // Launch child process in standalone lease mode
-      const workerScript = path.resolve(__dirname, '..', 'scripts', 'worker_simulate_crash.js');
+      const workerScript = backend('scripts', 'worker_simulate_crash.js');
       const child = fork(workerScript, [String(attempt._id), 'standalone'], {
         env: { ...process.env, MONGO_URI: process.env.MONGO_URI },
         stdio: ['pipe', 'pipe', 'pipe', 'ipc']
@@ -585,7 +586,7 @@ describe('Failure Recovery, Interrupted Writes & Partial Deletion Fallback Tests
         negativeMarking: false
       });
 
-      const workerScript = path.resolve(__dirname, '..', 'scripts', 'worker_simulate_crash.js');
+      const workerScript = backend('scripts', 'worker_simulate_crash.js');
       const child = fork(workerScript, [String(attempt._id), 'transaction'], {
         env: { ...process.env, MONGO_URI: process.env.MONGO_URI },
         stdio: ['pipe', 'pipe', 'pipe', 'ipc']

@@ -93,7 +93,7 @@ async function generate() {
     if (fs.existsSync(fp)) filesToHash.push(fp);
   });
   // Add folders
-  ['routes', 'models', 'services', '__tests__'].forEach(d => {
+  ['routes', 'models', 'services'].forEach(d => {
     const dp = path.join(backendRoot, d);
     if (fs.existsSync(dp)) walkDir(dp);
   });

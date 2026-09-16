@@ -1,11 +1,12 @@
 process.env.JWT_SECRET = process.env.JWT_SECRET || "test-secret-for-ci-at-least-32-chars-long";
 process.env.MONGO_URI = process.env.MONGO_URI || "mongodb://localhost:27017/hiready-test";
+const { backend } = require('./support/paths');
 
 const request = require("supertest");
 const jwt = require("jsonwebtoken");
 
 // Import app without starting server (require.main !== module guards listen)
-const app = require("../server");
+const app = require(backend('server'));
 
 describe("Backend health & routing", () => {
   test("GET /api/test returns 200 with working message", async () => {
@@ -116,15 +117,13 @@ describe("the server refuses to boot without a database URI", () => {
     // It used to skip the connect entirely and boot a database-less server
     // that only failed at request time.
     const fs = require("fs");
-    const path = require("path");
-    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+    const src = fs.readFileSync(backend("server.js"), "utf8");
     expect(src).toMatch(/if \(!process\.env\.MONGO_URI\) \{[\s\S]{0,200}throw new Error/);
   });
 
   test("connection failure is bounded well below the 30s default", () => {
     const fs = require("fs");
-    const path = require("path");
-    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+    const src = fs.readFileSync(backend("server.js"), "utf8");
     const match = src.match(/serverSelectionTimeoutMS:\s*(\d+)/);
     expect(match).not.toBeNull();
     expect(Number(match[1])).toBeLessThanOrEqual(10000);

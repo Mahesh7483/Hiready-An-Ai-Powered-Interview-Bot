@@ -208,7 +208,7 @@ Design decisions worth not re-litigating:
   be a confident figure with nothing behind it.
 - **Recruiters never receive** proctoring events, webcam frames, raw interview
   audio, practice history, or another company's pipeline. `ProctorSnapshot` is
-  a separate collection with a TTL, and `__tests__/hireBoundary.test.js` walks
+  a separate collection with a TTL, and `tests/backend/hireBoundary.test.js` walks
   the transitive `require` graph from `routes/hire/**` and fails the build if
   any of them becomes reachable.
 

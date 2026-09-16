@@ -1,3 +1,4 @@
+const { backend } = require('./support/paths');
 const fs = require('fs');
 const path = require('path');
 
@@ -9,7 +10,7 @@ const path = require('path');
  * dangerous path is gone.
  */
 
-const BACKEND = path.resolve(__dirname, '..');
+const BACKEND = backend();
 const read = (rel) => fs.readFileSync(path.join(BACKEND, rel), 'utf8');
 
 const sandbox = read('services/sandbox.js');
@@ -73,7 +74,7 @@ describe('L-1 · every token verification pins the algorithm', () => {
     const out = [];
     const walk = (dir) => {
       fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
-        if (e.name === 'node_modules' || e.name === '__tests__') return;
+        if (e.name === 'node_modules') return;
         const full = path.join(dir, e.name);
         if (e.isDirectory()) return walk(full);
         if (!e.name.endsWith('.js')) return;
@@ -215,7 +216,7 @@ describe('A-2 / A-3 · collab authorization fails closed', () => {
  * assertions cannot tell the difference, so the real guard now sends requests
  * and watches them get rejected:
  *
- *   __tests__/aiRateLimit.test.js
+ *   tests/backend/aiRateLimit.test.js
  *
  * Verified by reverting both defects: 5 of its 6 tests fail.
  */
