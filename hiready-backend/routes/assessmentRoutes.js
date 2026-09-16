@@ -230,9 +230,36 @@ router.post('/templates', requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * Fields an update may touch. Deliberately an allowlist, not a denylist.
+ *
+ * This route used to $set req.body wholesale. `companyId` is a declared path,
+ * so a single unvalidated field could move a platform template (companyId:
+ * null, visible to everyone) into one company's private scope — or pull a
+ * rival's template out of theirs. Which templates a recruiter can see is
+ * decided by that field in services/hire/readers.js, so it is an authorization
+ * input, not a content field.
+ *
+ * Adding a path here is a deliberate act. Omitting one costs an edit; adding
+ * the wrong one costs tenancy.
+ */
+const TEMPLATE_UPDATABLE = [
+  'title', 'description', 'targetRole', 'sections', 'breaks',
+  'resumeDriven', 'attemptLimit', 'cooldownDays', 'violationThreshold',
+  'isPublished',
+];
+
 router.put('/templates/:id', requireAdmin, async (req, res) => {
   try {
-    const updated = await AssessmentTemplate.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
+    const body = req.body && typeof req.body === 'object' ? req.body : {};
+    const $set = {};
+    TEMPLATE_UPDATABLE.forEach((k) => {
+      if (Object.prototype.hasOwnProperty.call(body, k)) $set[k] = body[k];
+    });
+    if (!Object.keys($set).length) {
+      return res.status(400).json({ error: 'No updatable fields supplied' });
+    }
+    const updated = await AssessmentTemplate.findByIdAndUpdate(req.params.id, { $set }, { new: true, runValidators: true });
     if (!updated) return res.status(404).json({ error: 'Template not found' });
     res.json(updated);
   } catch {
@@ -713,8 +740,19 @@ router.get('/attempt/:id/section/:idx/questions', async (req, res) => {
     }).filter(Boolean);
     if (!ids.length) return res.json([]);
 
+    /**
+     * MUST stay an array. The option paths contain spaces ('Option A'), and
+     * the string form of .select() splits on whitespace — so
+     *   .select('Question Option A Option B Option C Option D difficulty')
+     * asked Mongo for the paths Question, Option, A, B, C, D and difficulty,
+     * none of which exist except Question and difficulty. Every candidate
+     * reached the aptitude section of the assessment with no answer options
+     * to choose from.
+     *
+     * Answer and Explanation are excluded by omission — never add them here.
+     */
     const docs = await Question.find({ _id: { $in: ids } })
-      .select('Question Option A Option B Option C Option D difficulty')
+      .select(['Question', 'Option A', 'Option B', 'Option C', 'Option D', 'difficulty'])
       .lean();
     // Preserve the locked order
     const byId = new Map(docs.map((d) => [String(d._id), d]));

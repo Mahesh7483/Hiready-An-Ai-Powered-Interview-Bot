@@ -273,15 +273,41 @@ async function seed() {
     await mongoose.connect(MONGO_URI);
     console.log('Connected to MongoDB');
 
-    // Clear existing
-    await CodingQuestion.deleteMany({});
-    console.log('Cleared existing questions');
+    /**
+     * This used to be an unconditional deleteMany({}) with no flag and no
+     * prompt — running a script called "seed" against a populated database
+     * destroyed every admin-authored and bulk-imported question, and nothing
+     * in its name warned you.
+     *
+     * Destroying data is now something you have to ask for.
+     */
+    const reset = process.argv.includes('--reset');
+    if (reset) {
+      const existing = await CodingQuestion.countDocuments();
+      console.log(`--reset: deleting all ${existing} existing coding questions`);
+      await CodingQuestion.deleteMany({});
+    } else {
+      const existing = await CodingQuestion.countDocuments();
+      if (existing > 0) {
+        console.log(
+          `${existing} coding questions already exist. Upserting by slug; `
+          + 'nothing will be deleted. Pass --reset to wipe the bank first.'
+        );
+      }
+    }
 
-    // Insert new
-    const inserted = await CodingQuestion.insertMany(questions);
-    console.log(`Inserted ${inserted.length} coding questions`);
+    // Upsert by slug so a re-run is idempotent rather than duplicating.
+    let inserted = 0;
+    let updated = 0;
+    for (const q of questions) {
+      // eslint-disable-next-line no-await-in-loop
+      const r = await CodingQuestion.updateOne({ slug: q.slug }, { $set: q }, { upsert: true });
+      if (r.upsertedCount) inserted += 1;
+      else if (r.matchedCount) updated += 1;
+    }
+    console.log(`Seeded coding questions — ${inserted} inserted, ${updated} updated`);
 
-    for (const q of inserted) {
+    for (const q of questions) {
       console.log(`  - ${q.title} (${q.difficulty}) [${q.category}]`);
     }
 

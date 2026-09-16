@@ -167,10 +167,10 @@ const Login = () => {
             </Button>
           </form>
 
-          <div className="mt-6 flex items-center justify-between text-sm">
-            <Link to="/forgot-password" className="text-muted-foreground hover:text-foreground">
-              Forgot password?
-            </Link>
+          {/* No "Forgot password?" link: there is no reset flow, no route and
+              no backend endpoint behind it. The link that used to sit here fell
+              through to the 404 page, which is a worse answer than no link. */}
+          <div className="mt-6 flex items-center justify-end text-sm">
             <Link to="/signup" className="text-primary hover:underline">
               Need an account? Sign up
             </Link>

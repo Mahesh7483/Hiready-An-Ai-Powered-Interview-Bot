@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardTitle } from "@/components/ui/card";
@@ -120,7 +121,11 @@ const InterviewHistory = () => {
             <CardContent className="py-16 text-center space-y-3">
               <MessageSquare className="w-12 h-12 text-muted-foreground/40 mx-auto" />
               <p className="text-muted-foreground">No interviews yet. Complete your first mock interview to build history.</p>
-              <Button variant="outline">Start one from the Dashboard</Button>
+              {/* This had no onClick and no Link — it looked actionable and
+                  did nothing. An empty state's only job is to offer the way out. */}
+              <Button variant="outline" asChild>
+                <Link to="/practice/interview">Start a mock interview</Link>
+              </Button>
             </CardContent>
           </Card>
         ) : (

@@ -680,7 +680,7 @@ router.get('/results', async (req, res) => {
       results: results.map((r) => ({
         ...r,
         selectedAnswers: r.selectedAnswers || [],
-        user: userMap.get(r.userId) || null
+        user: userMap.get(String(r.userId)) || null
       }))
     });
   } catch (err) {
@@ -732,7 +732,7 @@ router.get('/proctor-logs', async (req, res) => {
         timestamp: l.timestamp,
         receivedAt: l.receivedAt,
         hasSnapshot: framed.has(String(l._id)),
-        user: l.userId ? userMap.get(l.userId) || null : null
+        user: l.userId ? userMap.get(String(l.userId)) || null : null
       }))
     });
   } catch (err) {

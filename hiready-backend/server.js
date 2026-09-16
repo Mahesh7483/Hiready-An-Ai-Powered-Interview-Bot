@@ -84,15 +84,28 @@ const apiLimiter = rateLimit({
  * Groq and Deepgram calls cost money per request, and the global limiter is
  * per-IP and generous enough (300 / 15 min) that one authenticated account can
  * exhaust a daily provider quota — which has already happened here once.
- * Keying on req.user.id means one noisy account cannot spend everyone else's
- * allowance, and falls back to IP for anything unauthenticated.
+ *
+ * The first version of this limiter did nothing at all, in two ways at once,
+ * and both are worth naming because each is easy to write again:
+ *
+ *   1. It was mounted BEFORE the router whose `router.use(requireAuth)` sets
+ *      req.user, so `req.user` was always undefined and the per-account branch
+ *      was never taken. requireAuth is now mounted ahead of it, below.
+ *
+ *   2. `ipKeyGenerator` takes an IP STRING, not the request. Passing `req`
+ *      returned the request object itself, and MemoryStore keys by identity —
+ *      so every request got a fresh bucket with a count of one and nothing was
+ *      ever limited.
+ *
+ * Its test asserted on the source text of this file and passed throughout.
+ * The replacement sends real requests; see __tests__/aiRateLimit.test.js.
  */
 const aiLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
   limit: 60,
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => (req.user && req.user.id) || ipKeyGenerator(req),
+  keyGenerator: (req) => (req.user && req.user.id) || ipKeyGenerator(req.ip),
   message: { error: 'AI usage limit reached for this hour. Please try again later.' },
 });
 
@@ -107,9 +120,29 @@ const authLimiter = rateLimit({
 
 app.use(express.json({ limit: '10mb' }));
 
-// 4. Connect to MongoDB
-if (process.env.NODE_ENV !== 'test' && process.env.MONGO_URI) {
-  mongoose.connect(process.env.MONGO_URI)
+/**
+ * 4. Connect to MongoDB.
+ *
+ * Two deliberate choices here, both learned the hard way:
+ *
+ * A missing MONGO_URI used to skip the connect entirely, so the process booted
+ * happily with no database and every data route failed at request time instead.
+ * That is the worst shape a failure can take — healthy on the outside, broken
+ * on every path that matters. It now fails at boot like JWT_SECRET does.
+ *
+ * serverSelectionTimeoutMS defaults to 30s. With the database down, a login
+ * took 30 seconds to return a generic 500; measured, not guessed. Five seconds
+ * is long enough to ride out a reconnect and short enough that the caller gets
+ * an answer rather than a hung tab.
+ */
+if (process.env.NODE_ENV !== 'test') {
+  if (!process.env.MONGO_URI) {
+    throw new Error(
+      'MONGO_URI must be set. The API cannot serve any data route without it. '
+      + 'For local development: mongodb://127.0.0.1:27017/hiready'
+    );
+  }
+  mongoose.connect(process.env.MONGO_URI, { serverSelectionTimeoutMS: 5000 })
     .then(() => console.log('MongoDB Connected'))
     .catch((err) => console.error('DB Error:', err && err.message ? err.message : err));
 }
@@ -121,15 +154,53 @@ app.get('/', (req, res) => {
     status: 'running',
     frontend: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',')[0] : 'http://localhost:8080',
     apiBase: `${req.protocol}://${req.get('host')}/api`,
-    health: `${req.protocol}://${req.get('host')}/api/test`,
+    health: `${req.protocol}://${req.get('host')}/api/health`,
   });
 });
 
+/**
+ * Liveness. Says the process is up and nothing more — it deliberately touches
+ * no dependency, so it stays cheap and always answers.
+ */
 app.get('/api/test', (req, res) => {
   res.json({ message: 'Backend is working' });
 });
 
+/**
+ * Readiness — whether this process can actually serve a request.
+ *
+ * /api/test returned 200 "Backend is working" while the database was
+ * unreachable and every login took 30 seconds to fail. The Docker HEALTHCHECK
+ * pointed at it, so the container reported healthy through a total outage. A
+ * health check that cannot fail is not a health check.
+ *
+ * Reports only whether each provider key is PRESENT. Never the key, never a
+ * prefix, never a length — this endpoint is unauthenticated on purpose so that
+ * a probe can reach it, which means it must give an attacker nothing.
+ */
+const MONGO_STATES = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+
+app.get('/api/health', (req, res) => {
+  const readyState = mongoose.connection.readyState;
+  const database = MONGO_STATES[readyState] || 'unknown';
+  const ok = readyState === 1;
+
+  res.status(ok ? 200 : 503).json({
+    status: ok ? 'ok' : 'degraded',
+    database,
+    // Configuration presence, not reachability: a wrong key still reads true.
+    // It separates "nobody set this up" from "the provider is having a day".
+    providers: {
+      groq: Boolean(process.env.GROQ_API_KEY),
+      deepgram: Boolean(process.env.DEEPGRAM_API_KEY),
+      firebase: Boolean(process.env.FIREBASE_PROJECT_ID),
+    },
+    uptimeSeconds: Math.floor(process.uptime()),
+  });
+});
+
 // 6. Import Routes
+const { requireAuth } = require('./middleware/auth');
 const questionRoutes = require('./routes/questionRoutes');
 const authRoutes = require('./routes/authRoutes');
 const interviewRoutes = require('./routes/interviewRoutes');
@@ -149,7 +220,12 @@ const consentRoutes = require('./routes/consentRoutes');
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/questions', apiLimiter, questionRoutes);
 app.use('/api/interview', apiLimiter, interviewRoutes);
-app.use('/api/ai', apiLimiter, aiLimiter, aiRoutes);
+// requireAuth MUST precede aiLimiter: the limiter keys on req.user.id, which
+// does not exist until requireAuth has run. aiRoutes keeps its own
+// router.use(requireAuth) so the router is never servable unauthenticated if
+// it is ever mounted somewhere else; the second pass is a Map hit against the
+// existence cache in middleware/auth.js, not a second database read.
+app.use('/api/ai', apiLimiter, requireAuth, aiLimiter, aiRoutes);
 app.use('/api/admin', apiLimiter, adminRoutes);
 app.use('/api/resumes', apiLimiter, resumeRoutes);
 app.use('/api/interviews', apiLimiter, interviewSessionRoutes);

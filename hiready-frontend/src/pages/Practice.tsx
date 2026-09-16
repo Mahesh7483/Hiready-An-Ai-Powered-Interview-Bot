@@ -52,7 +52,10 @@ const tiles: Tile[] = [
     tone: "primary",
     to: "/practice/interview",
     cta: "Start Interview",
-    records: [{ label: "Past sessions", to: "/practice/interview" }],
+    // /practice/interview is the instructions screen, not the history page.
+    // Pointing here meant InterviewHistory — a complete, working page — was
+    // unreachable by clicking anywhere in the app.
+    records: [{ label: "Past sessions", to: "/practice/interview/history" }],
   },
   {
     title: "Assessments",

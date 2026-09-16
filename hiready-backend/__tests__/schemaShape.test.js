@@ -129,3 +129,107 @@ describe('no array path silently lost its subdocument schema', () => {
     expect(collapsed).toEqual([]);
   });
 });
+
+describe('a projection never asks for a schema path it cannot name', () => {
+  /**
+   * Mongoose's string form of .select() splits on whitespace. Any schema path
+   * that contains a space therefore CANNOT be expressed that way:
+   *
+   *   .select('Question Option A Option B Option C Option D difficulty')
+   *
+   * asked Mongo for Question, Option, A, B, C, D and difficulty. Only two of
+   * those exist. Every candidate reached the aptitude section of the
+   * assessment pipeline with no answer options to choose from, and nothing
+   * errored — Mongo returns documents for a projection of paths that do not
+   * exist, just without those fields.
+   *
+   * Derived from the models, not from a list someone has to remember to
+   * extend: if a future schema adds another space-bearing path, this guard
+   * covers it the moment it exists.
+   */
+  const BACKEND_ROOT = path.join(__dirname, '..');
+  const SRC_DIRS = ['routes', 'services'];
+
+  /** Every schema path anywhere in models/ whose name contains whitespace. */
+  function spaceBearingPaths() {
+    const out = new Set();
+    fs.readdirSync(MODELS).filter((f) => f.endsWith('.js')).forEach((file) => {
+      // eslint-disable-next-line global-require
+      const Model = require(path.join(MODELS, file));
+      if (!Model || !Model.schema) return;
+      Model.schema.eachPath((p) => {
+        if (/\s/.test(p)) out.add(p);
+      });
+    });
+    return out;
+  }
+
+  /** Every string-form .select('...') call under routes/ and services/. */
+  function stringSelects() {
+    const out = [];
+    const walk = (dir) => {
+      fs.readdirSync(dir, { withFileTypes: true }).forEach((e) => {
+        if (e.name === 'node_modules') return;
+        const full = path.join(dir, e.name);
+        if (e.isDirectory()) return walk(full);
+        if (!e.name.endsWith('.js')) return;
+        const src = fs.readFileSync(full, 'utf8');
+        src.split(/\r?\n/).forEach((line, i) => {
+          // Skip comments — the fix documents the broken form in prose.
+          if (/^\s*(\*|\/\/)/.test(line)) return;
+          const m = line.match(/\.select\(\s*'([^']+)'\s*\)/);
+          if (m) {
+            out.push({
+              file: path.relative(BACKEND_ROOT, full).split(path.sep).join('/'),
+              line: i + 1,
+              projection: m[1],
+            });
+          }
+        });
+      });
+    };
+    SRC_DIRS.forEach((d) => walk(path.join(BACKEND_ROOT, d)));
+    return out;
+  }
+
+  const SPACED = spaceBearingPaths();
+  const SELECTS = stringSelects();
+
+  test('the scan actually found space-bearing paths and projections', () => {
+    // Non-vacuity. A regex matching nothing would make the real test pass free.
+    expect(SPACED.size).toBeGreaterThan(0);
+    expect(SELECTS.length).toBeGreaterThan(5);
+  });
+
+  test('no string projection mentions a path that contains a space', () => {
+    // The leading token of 'Option A' is 'Option'. A string projection that
+    // contains that bare word is trying to select a path it cannot express.
+    const leadingTokens = new Set([...SPACED].map((p) => p.split(/\s+/)[0]));
+    const offenders = SELECTS.filter((s) =>
+      s.projection.split(/\s+/).some((tok) => leadingTokens.has(tok))
+    ).map((s) => `${s.file}:${s.line} -> .select('${s.projection}')`);
+
+    expect(offenders).toEqual([]);
+  });
+
+  test('the array form is what actually reaches Mongo', () => {
+    // Proves the distinction rather than asserting it: same intent, two forms.
+    const schema = new mongoose.Schema({
+      Question: String,
+      'Option A': mongoose.Schema.Types.Mixed,
+      'Option B': mongoose.Schema.Types.Mixed,
+      difficulty: String,
+    });
+    const M = mongoose.models.__ProjectionProbe
+      || mongoose.model('__ProjectionProbe', schema);
+
+    const broken = M.find().select('Question Option A Option B difficulty').projection();
+    expect(broken).not.toHaveProperty('Option A');
+    expect(broken).toHaveProperty('Option');   // a path that does not exist
+
+    const correct = M.find().select(['Question', 'Option A', 'Option B', 'difficulty']).projection();
+    expect(correct).toHaveProperty('Option A');
+    expect(correct).toHaveProperty('Option B');
+    expect(correct).not.toHaveProperty('Option');
+  });
+});

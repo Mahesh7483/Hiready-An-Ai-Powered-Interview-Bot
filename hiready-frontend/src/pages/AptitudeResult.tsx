@@ -42,12 +42,10 @@ const AptitudeResult = () => {
         setProgress((parsedResult.score / parsedResult.totalQuestions) * 100);
       }, 300);
 
-      const mainDiv = document.getElementById("result-main");
-      if (mainDiv && !document.fullscreenElement) {
-        mainDiv.requestFullscreen().catch((err) => {
-          console.log("Fullscreen request failed:", err.message);
-        });
-      }
+      // No requestFullscreen here. It used to be called on mount, with no user
+      // gesture behind it, so every browser rejected it unconditionally and it
+      // only ever reached the .catch. The results page is not proctored —
+      // there is nothing left to guard once the attempt is graded.
     } else {
       navigate("/practice/aptitude");
     }

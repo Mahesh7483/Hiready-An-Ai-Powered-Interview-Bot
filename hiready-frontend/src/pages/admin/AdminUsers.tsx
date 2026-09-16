@@ -139,7 +139,10 @@ const AdminUsers = () => {
           </div>
 
       <Card className="border border-border overflow-hidden">
-        <CardContent className="p-0">
+        {/* overflow-x-auto, as every other admin table has. Without it the
+            Card's overflow-hidden clips Role/Tests/Joined/Actions off the
+            right edge on a phone with no way to scroll to them. */}
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

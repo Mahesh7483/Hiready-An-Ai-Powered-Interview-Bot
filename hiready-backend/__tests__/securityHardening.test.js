@@ -201,9 +201,21 @@ describe('A-2 / A-3 · collab authorization fails closed', () => {
   });
 });
 
-describe('A-5 · paid endpoints are metered per user', () => {
-  test('the AI routes carry their own limiter keyed on the account', () => {
-    expect(server).toMatch(/app\.use\('\/api\/ai', apiLimiter, aiLimiter, aiRoutes\)/);
-    expect(server).toMatch(/keyGenerator: \(req\) => \(req\.user && req\.user\.id\)/);
-  });
-});
+/**
+ * A-5 · paid endpoints are metered per user.
+ *
+ * The guard that lived here asserted on the source text of server.js — that
+ * the mount line read a certain way and that the word `keyGenerator:` was
+ * present. Both were true, and the limiter still did nothing: it was mounted
+ * ahead of the middleware that sets req.user, and its fallback called
+ * ipKeyGenerator with a request object instead of an IP string, giving every
+ * request its own bucket.
+ *
+ * A control can be present in the source and wrong at runtime. Source-text
+ * assertions cannot tell the difference, so the real guard now sends requests
+ * and watches them get rejected:
+ *
+ *   __tests__/aiRateLimit.test.js
+ *
+ * Verified by reverting both defects: 5 of its 6 tests fail.
+ */
