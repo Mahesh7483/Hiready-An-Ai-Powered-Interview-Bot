@@ -240,6 +240,7 @@ const codingQuestionRoutes = require('./routes/coding/questions');
 const { initCollab } = require('./services/collab');
 const assessmentRoutes = require('./routes/assessmentRoutes');
 const readinessRoutes = require('./routes/readinessRoutes');
+const masteryRoutes = require('./routes/masteryRoutes');
 const hireRoutes = require('./routes/hire');
 const consentRoutes = require('./routes/consentRoutes');
 
@@ -260,6 +261,7 @@ app.use('/api/code', apiLimiter, codingRoutes);
 app.use('/api/admin/coding-questions', apiLimiter, codingQuestionRoutes);
 app.use('/api/assessment', apiLimiter, assessmentRoutes);
 app.use('/api/readiness', apiLimiter, readinessRoutes);
+app.use('/api/mastery', apiLimiter, masteryRoutes);
 app.use('/api/hire', apiLimiter, hireRoutes);
 app.use('/api/consent', apiLimiter, consentRoutes);
 

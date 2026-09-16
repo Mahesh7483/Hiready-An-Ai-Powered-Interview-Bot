@@ -24,7 +24,23 @@ const companySchema = new mongoose.Schema(
       index: true,
     },
 
-    // Ceiling on active CompanyMembership rows. Enforced when inviting.
+    /**
+     * Intended ceiling on active CompanyMembership rows.
+     *
+     * NOT ENFORCED, and the note that used to sit here claimed that inviting
+     * enforced it. Nothing does, and nothing can yet: no route creates a
+     * CompanyMembership at all. The only code that does is
+     * scripts/smokeHireFlow.js, so a team is assembled by hand against the
+     * database. POST /api/hire/invites does not consume a seat — it invites
+     * CANDIDATES, which is a consent event, not a team membership.
+     *
+     * GET /api/admin/companies does report seatsUsed, and that number is real
+     * — it counts actual membership rows. The ceiling beside it is currently
+     * advisory.
+     *
+     * When a team-invitation flow is built, enforce it at the point a
+     * membership row is created, and make this comment true.
+     */
     seats: { type: Number, default: 3, min: 1, max: 500 },
 
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },

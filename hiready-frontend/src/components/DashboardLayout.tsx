@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { GraduationCap, Target, LayoutGrid, LogOut, Menu, X } from "lucide-react";
+import { GraduationCap, Target, LayoutGrid, LogOut, Menu, X, ShieldCheck, Briefcase } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { hireAPI } from "@/lib/hireApi";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
@@ -17,6 +19,17 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // Same query key HireLayout uses, so the two share one cached answer.
+  // retry:false because /hire/me answers 404 for a student, which is not a
+  // failure worth retrying three times on every dashboard load.
+  const { data: hireMe } = useQuery({
+    queryKey: ["hire", "me"],
+    queryFn: hireAPI.me,
+    retry: false,
+    staleTime: 5 * 60 * 1000,
+  });
+  const hasHireAccess = (hireMe?.companies?.length ?? 0) > 0;
 
   // Get user initials for avatar fallback
   const getInitials = (displayName: string | null) => {
@@ -91,8 +104,12 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
               </div>
             </div>
 
-            {/* Navigation (scrollable so it never hides the profile on short screens) */}
-            <div className="flex-1 overflow-y-auto pb-28">
+            {/* Navigation (scrollable so it never hides the profile on short
+                screens). The reserved space must cover the whole absolutely
+                positioned footer below — avatar block plus THREE buttons now,
+                where it was one. pb-28 was sized for the old footer and would
+                let the account links sit on top of the nav on a short viewport. */}
+            <div className="flex-1 overflow-y-auto pb-56">
               <nav className="p-4 space-y-2">
                 {navItems.map((item) => {
                   const Icon = item.icon;
@@ -137,6 +154,42 @@ const DashboardLayout = ({ children, hideSidebar = false }: DashboardLayoutProps
                   <p className="text-xs text-muted-foreground truncate">{user?.email || "No email"}</p>
                 </div>
               </div>
+              {/* Account-level links, deliberately here rather than in the nav
+                  above: that nav is the two practice flows and adding a third
+                  item would blur what it means.
+
+                  /privacy had no entry point anywhere in the app. It was
+                  reachable only by typing the URL or by following a redirect
+                  after accepting an invite — so a student who had never been
+                  invited could not find the screen that tells them which
+                  companies can see their data, which is the one screen they
+                  have the strongest right to reach. */}
+              <Link to="/privacy" className="block">
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground"
+                >
+                  <ShieldCheck className="w-4 h-4 mr-2" />
+                  Who can see you
+                </Button>
+              </Link>
+
+              {/* Only for people who actually have hiring access. The query is
+                  shared with HireLayout's, so this costs nothing extra once
+                  either has run, and a student never sees a door that opens
+                  onto a refusal. */}
+              {hasHireAccess && (
+                <Link to="/hire" className="block">
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-sidebar-foreground/80 hover:text-sidebar-foreground"
+                  >
+                    <Briefcase className="w-4 h-4 mr-2" />
+                    For employers
+                  </Button>
+                </Link>
+              )}
+
               <Button
                 variant="ghost"
                 className="w-full justify-start text-destructive hover:text-destructive hover:bg-destructive/10"

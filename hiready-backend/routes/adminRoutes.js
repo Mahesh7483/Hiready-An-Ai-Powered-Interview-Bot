@@ -258,11 +258,24 @@ router.get('/users', async (req, res) => {
 // GET /api/admin/users/export.csv — export users to CSV
 router.get('/users/export.csv', async (req, res) => {
   try {
+    /**
+     * testCount is NOT a field on User — it is derived, exactly as GET /users
+     * derives it above. Selecting it produced a CSV with a testCount header
+     * and an empty value on every row, which reads as "nobody has taken a
+     * test" rather than as a bug.
+     */
     const users = await User.find({})
-      .select('name email role createdAt testCount')
+      .select('name email role createdAt')
       .sort({ createdAt: -1 })
       .lean();
-    const csv = arrayToCsv(users, ['name', 'email', 'role', 'createdAt', 'testCount']);
+
+    const counts = await TestResult.aggregate([
+      { $group: { _id: '$userId', tests: { $sum: 1 } } }
+    ]);
+    const countMap = new Map(counts.map((c) => [String(c._id), c.tests]));
+
+    const rows = users.map((u) => ({ ...u, testCount: countMap.get(String(u._id)) || 0 }));
+    const csv = arrayToCsv(rows, ['name', 'email', 'role', 'createdAt', 'testCount']);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="users.csv"');
     res.send(csv);
@@ -308,7 +321,25 @@ router.get('/proctor-logs/export.csv', async (req, res) => {
       .sort({ timestamp: -1 })
       .lean();
 
-    const csv = arrayToCsv(logs, [
+    /**
+     * hasSnapshot is derived, not stored. Frames were moved out of ProctorLog
+     * into their own collection so that biometric data could carry a TTL and
+     * an admin-only gate, which means this column exported blank on every row
+     * from the moment of that split — reading as "no evidence was ever
+     * captured" rather than as a missing join.
+     *
+     * Id-only query, same as the list route: the export must never pull image
+     * data it does not write, and a frame past its TTL correctly reports false.
+     */
+    const framed = new Set(
+      (await ProctorSnapshot.find({ proctorLogId: { $in: logs.map((l) => l._id) } })
+        .select('proctorLogId')
+        .lean()).map((f) => String(f.proctorLogId))
+    );
+
+    const rows = logs.map((l) => ({ ...l, hasSnapshot: framed.has(String(l._id)) }));
+
+    const csv = arrayToCsv(rows, [
       '_id', 'sessionId', 'userId', 'event', 'timestamp', 'receivedAt', 'hasSnapshot'
     ]);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
@@ -1258,11 +1289,21 @@ router.get('/weak-topics', async (req, res) => {
   }
 });
 
-// GET /api/admin/engagement - who is actually practising.
-//
-// NOTE: there is no session or review-queue model yet, so this reports real
-// practice activity rather than inventing session completion. Wire the session
-// and ReviewItem counts in here once those land.
+/**
+ * GET /api/admin/engagement — who is actually practising.
+ *
+ * "Active" spans all four things a student can do. Assessments were missing
+ * from this count, which mattered more than the other three: sitting a
+ * proctored multi-section assessment is the most involved thing anyone does
+ * here, and a cohort doing nothing but assessments registered as completely
+ * inactive.
+ *
+ * Still not counted, because the models do not exist rather than because they
+ * were forgotten: there is no daily-session record behind the Mastery
+ * "Today's session" card, and no ReviewItem queue behind spaced repetition.
+ * This reports the activity that is really stored instead of inferring
+ * completion from what a student was offered.
+ */
 router.get('/engagement', async (req, res) => {
   try {
     const now = Date.now();
@@ -1270,12 +1311,15 @@ router.get('/engagement', async (req, res) => {
     const live = await existingUserIds();
 
     const activeIn = async (days) => {
-      const [tests, interviews, code] = await Promise.all([
+      const [tests, interviews, code, assessments] = await Promise.all([
         TestResult.distinct('userId', { createdAt: { $gte: since(days) } }),
         InterviewSession.distinct('user', { createdAt: { $gte: since(days) } }),
-        CodingSubmission.distinct('userId', { createdAt: { $gte: since(days) } })
+        CodingSubmission.distinct('userId', { createdAt: { $gte: since(days) } }),
+        AssessmentAttempt.distinct('userId', { createdAt: { $gte: since(days) } })
       ]);
-      const ids = [...tests, ...interviews, ...code].map(String).filter((id) => live.has(id));
+      const ids = [...tests, ...interviews, ...code, ...assessments]
+        .map(String)
+        .filter((id) => live.has(id));
       return new Set(ids).size;
     };
 

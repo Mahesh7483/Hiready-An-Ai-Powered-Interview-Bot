@@ -21,7 +21,25 @@ interface ReadinessData {
   resume: Pillar;
 }
 interface WeakTopic { topic: string; accuracy: number; answered: number }
-interface WrongAnswer { questionId: string; topic: string; timesWrong: number }
+
+/** GET /api/mastery/today — the server's choice of what to work on now. */
+interface TodayBlock {
+  kind: "recall" | "stretch" | "speak";
+  minutes: number;
+  count?: number;
+  topic?: string | null;
+  pillar?: string;
+}
+interface TodaySession {
+  generatedAt: string;
+  overall: number;
+  hasAnyData: boolean;
+  weakestPillar: string;
+  weakestTopic: WeakTopic | null;
+  dueCount: number;
+  bookmarked: number;
+  blocks: TodayBlock[];
+}
 
 type PillarKey = "interview" | "aptitude" | "coding" | "resume";
 
@@ -38,8 +56,8 @@ const PILLAR_ORDER: PillarKey[] = ["resume", "interview", "coding", "aptitude"];
 const Mastery = () => {
   const { user, loading } = useAuth();
   const [readiness, setReadiness] = useState<ReadinessData | null>(null);
+  const [today, setToday] = useState<TodaySession | null>(null);
   const [weakTopics, setWeakTopics] = useState<WeakTopic[]>([]);
-  const [dueCount, setDueCount] = useState<number | null>(null);
   const [loadingData, setLoadingData] = useState(true);
   const [loadError, setLoadError] = useState<Error | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -47,30 +65,36 @@ const Mastery = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      /**
+       * Two calls where there were three. /mastery/today already computes the
+       * session from the readiness numbers server-side, so the wrong-answer
+       * count it used to fetch separately comes back inside it.
+       *
+       * allSettled without a rejected branch is how this page told a user with
+       * a full history that they had never scored anything: every failed fetch
+       * left state at its initial value, and the page rendered a readiness of
+       * "—", no weak topics, and "Nothing scored yet".
+       */
       const results = await Promise.allSettled([
         apiJson<ReadinessData>("/readiness/me"),
+        apiJson<TodaySession>("/mastery/today"),
         apiJson<{ weakTopics: WeakTopic[] }>("/questions/weak-topics/me"),
-        apiJson<{ items: WrongAnswer[] }>("/questions/wrong-answers/me"),
       ]);
       if (cancelled) return;
       if (results[0].status === "fulfilled") setReadiness(results[0].value);
-      if (results[1].status === "fulfilled") setWeakTopics(results[1].value.weakTopics ?? []);
-      if (results[2].status === "fulfilled") setDueCount(results[2].value.items?.length ?? 0);
+      if (results[1].status === "fulfilled") setToday(results[1].value);
+      if (results[2].status === "fulfilled") setWeakTopics(results[2].value.weakTopics ?? []);
 
       /**
-       * allSettled without a rejected branch is how this page told a user with
-       * a full history that they had never scored anything: three failed
-       * fetches left every piece of state at its initial value, and the page
-       * rendered a readiness of "—", no weak topics, and "Nothing scored yet".
-       *
-       * Readiness is the one that decides what this page says. If it failed,
-       * say so. The other two degrade honestly on their own — an empty weak-
-       * topics list and a null due count both read as "nothing to show here",
-       * which is the truth when they are genuinely empty and a small, visible
-       * understatement when they are not.
+       * Readiness and the session decide what this page says; if either
+       * failed, say so rather than composing a plan from defaults. Weak topics
+       * degrade honestly on their own — an empty list reads as "nothing to
+       * show", which is the truth when it is empty and a small, visible
+       * understatement when it is not.
        */
-      if (results[0].status === "rejected") {
-        const reason = results[0].reason;
+      const critical = [results[0], results[1]].find((r) => r.status === "rejected");
+      if (critical && critical.status === "rejected") {
+        const reason = critical.reason;
         setLoadError(reason instanceof Error ? reason : new Error("Request failed"));
       } else {
         setLoadError(null);
@@ -80,43 +104,48 @@ const Mastery = () => {
     return () => { cancelled = true; };
   }, [reloadKey]);
 
-  // The composer, client-side for now: the weakest pillar that has data decides
-  // block 2. Pillars with no data rank first — you cannot improve what you have
-  // not tried. Replace with GET /api/mastery/today once the backend lands.
-  const weakestPillar: PillarKey = (() => {
-    if (!readiness) return "aptitude";
-    const scored = PILLAR_ORDER.map((k) => ({ key: k, score: readiness[k]?.score }));
-    const untried = scored.find((p) => p.score == null);
-    if (untried) return untried.key;
-    return scored.reduce((lo, p) => ((p.score ?? 100) < (lo.score ?? 100) ? p : lo)).key;
-  })();
-
-  const weakestTopic = weakTopics[0];
-  const stretch = PILLAR_META[weakestPillar];
+  /**
+   * The composer is the SERVER's decision now — GET /api/mastery/today.
+   *
+   * This block used to re-derive the weakest pillar here, with its own copy of
+   * a rule that also lives in services/readiness.js. Two implementations of one
+   * rule is how a student gets told to work on aptitude while the score beside
+   * it says coding; the README makes exactly that argument about readiness, and
+   * the session card is the same thing one step further on.
+   *
+   * The client still owns the wording and the routes. The server picks WHAT to
+   * practise; it has no business picking button labels.
+   */
+  const stretchPillar: PillarKey = (today?.weakestPillar as PillarKey) || "aptitude";
+  const stretch = PILLAR_META[stretchPillar];
   const StretchIcon = stretch.icon;
+
+  const recall = today?.blocks?.find((b) => b.kind === "recall");
+  const recallCount = recall?.count ?? 0;
+  const recallTopic = recall?.topic ?? null;
 
   const blocks = [
     {
       name: "Recall",
-      minutes: 4,
+      minutes: today?.blocks?.find((b) => b.kind === "recall")?.minutes ?? 4,
       icon: RotateCcw,
       to: "/mastery/review",
-      detail: dueCount
-        ? `${Math.min(dueCount, 5)} question${Math.min(dueCount, 5) === 1 ? "" : "s"} you got wrong before`
-        : weakestTopic
-          ? `5 questions on ${weakestTopic.topic.replace(/-/g, " ")}`
+      detail: recallCount
+        ? `${recallCount} question${recallCount === 1 ? "" : "s"} you got wrong before`
+        : recallTopic
+          ? `5 questions on ${recallTopic.replace(/-/g, " ")}`
           : "5 questions once you have attempted a test",
     },
     {
       name: "Stretch",
-      minutes: 7,
+      minutes: today?.blocks?.find((b) => b.kind === "stretch")?.minutes ?? 7,
       icon: StretchIcon,
       to: stretch.to,
       detail: `One ${stretch.label.toLowerCase()} task — your weakest area right now`,
     },
     {
       name: "Speak",
-      minutes: 4,
+      minutes: today?.blocks?.find((b) => b.kind === "speak")?.minutes ?? 4,
       icon: MessageSquare,
       to: "/practice/interview",
       detail: "One interview question, recorded and scored",
@@ -211,9 +240,9 @@ const Mastery = () => {
                   Start session <ArrowRight className="ml-2 w-4 h-4" />
                 </Button>
               </Link>
-              {dueCount != null && dueCount > 0 && (
+              {today != null && today.dueCount > 0 && (
                 <span className="text-sm text-primary-foreground/80">
-                  {dueCount} question{dueCount === 1 ? "" : "s"} waiting to be re-tried
+                  {today.dueCount} question{today.dueCount === 1 ? "" : "s"} waiting to be re-tried
                 </span>
               )}
             </div>
@@ -228,7 +257,7 @@ const Mastery = () => {
           {PILLAR_ORDER.map((key) => {
             const meta = PILLAR_META[key];
             const score = readiness?.[key]?.score ?? null;
-            const isWeakest = key === weakestPillar && readiness?.hasAnyData;
+            const isWeakest = key === stretchPillar && readiness?.hasAnyData;
             const Icon = meta.icon;
             return (
               <Link key={key} to={meta.to} className="block">
