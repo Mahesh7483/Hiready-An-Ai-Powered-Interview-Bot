@@ -58,9 +58,12 @@ stay and point at dead credentials.
 - `.gitignore` blocks `.env` and `.env.*` at any depth. Templates are named
   `env.example` (no leading dot) so they cannot match those patterns and
   cannot be mistaken for a live file.
-- CI fails the build if any `.env` file is tracked, or if a template contains
-  something shaped like a real key. Previously nothing enforced this, so
-  nothing noticed — `.github/` was itself gitignored and CI had never run.
+- A CI job to refuse any tracked `.env` file, or a template containing
+  something shaped like a real key, is written at `.github/workflows/ci.yml`
+  but NOT YET COMMITTED: pushing a workflow file needs an OAuth token with the
+  `workflow` scope. Until it is, this is enforced only by running
+  `npm run lint` and reading the diff. Previously nothing enforced it at all,
+  and nothing noticed — `.github/` was itself gitignored and CI had never run.
 - The frontend no longer reads any provider key. Groq and Deepgram are called
   server-side; the browser gets a 60-second scoped Deepgram token. Twelve
   documents instructing contributors to put `VITE_GROQ_API_KEY` in the

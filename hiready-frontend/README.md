@@ -27,7 +27,9 @@ repository root, `npm run dev` starts both.
 | `npm run typecheck` | `tsc -b` |
 | `npm test` | Vitest |
 
-All five run in CI on every pull request.
+All five are meant to run in CI on every pull request. The workflow is written
+but not yet committed — see the Testing section of the root README — so for now
+run them before pushing.
 
 ## Configuration
 

@@ -143,10 +143,11 @@ Every variable above is documented in the commented templates —
 `env.example`, `hiready-backend/env.example` and `hiready-frontend/env.example`.
 Copy those rather than working from this table.
 
-**Never commit a populated `.env`.** `.gitignore` blocks `.env` and `.env.*`
-at any depth, and CI fails the build if one is ever tracked. The templates are
-named `env.example` without a leading dot precisely so they cannot match those
-patterns and cannot be mistaken for a live file.
+**Never commit a populated `.env`.** `.gitignore` blocks `.env` and `.env.*` at
+any depth, and the templates are named `env.example` without a leading dot
+precisely so they cannot match those patterns and cannot be mistaken for a live
+file. A CI job that would fail the build on a tracked `.env` is written but not
+yet committed — see [Testing](#testing).
 
 Env files were committed to this repository twice in the past and are still in
 its history. See [SECURITY.md](SECURITY.md) — those credentials need rotating.
@@ -267,14 +268,34 @@ against real requests by tests/backend/routeAuthorization.test.js, which sends
 them — introspection got this wrong twice while it was being written, and a
 route audit that under-counts open endpoints is worse than none.
 
-**CI.** `.github/workflows/ci.yml` runs all of the above on every pull request:
-frontend lint, typecheck, Vitest and build; backend lint, syntax check, the
-Jest suite against a real `mongo:7` service, both smoke runs, and a boot check.
-A fourth job fails the build if any `.env` file is tracked or a template
-contains something shaped like a real key.
+**CI — written, repaired, and not yet running.**
 
-This workflow existed, fully written, for the life of the repository and never
-ran once: `.gitignore` listed `.github/`, so it could not be committed.
+`.github/workflows/ci.yml` is prepared and correct: frontend lint, typecheck,
+Vitest and build; backend lint, syntax check, the Jest suite against a real
+`mongo:7` service, both smoke runs, and a boot check; a third job lints
+`tests/`; a fourth refuses any tracked `.env` file or a template containing
+something shaped like a real key. Every one of those was run locally first,
+including `npm ci` in all three package roots.
+
+**It is not committed, so nothing runs automatically yet.** The file existed,
+fully written, for the life of this repository without ever running once —
+`.gitignore` listed `.github/`, so it could not be committed. That line is
+fixed, but GitHub separately refuses a push from an OAuth token lacking the
+`workflow` scope whenever a pushed commit creates a file under
+`.github/workflows/`. The identical branch is rejected with the file and
+pushes cleanly without it.
+
+To turn it on, from a shell with that scope:
+
+```sh
+gh auth refresh -h github.com -s workflow    # approve in the browser
+git add .github/workflows/ci.yml && git commit -m "ci: add the workflow" && git push
+```
+
+Or paste the file into GitHub's web editor, which uses a browser session
+rather than a token. Until one of those happens, run the checks by hand —
+`npm test`, `npm run lint`, `npm run smoke` — and treat any claim that CI
+guards this repository as aspirational.
 
 ---
 
