@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,10 @@ const STATE_COPY: Record<string, { label: string; help: string; variant: "defaul
 
 const Privacy = () => {
   const qc = useQueryClient();
-  const { data, isLoading } = useQuery({ queryKey: ["consent", "me"], queryFn: consentAPI.mine });
+  const { data, isLoading, isError, error, refetch } = useQuery({
+    queryKey: ["consent", "me"],
+    queryFn: consentAPI.mine,
+  });
 
   const revoke = useMutation({
     mutationFn: (companyId: string) => consentAPI.revoke(companyId),
@@ -83,6 +87,13 @@ const Privacy = () => {
           <div className="flex items-center gap-3 text-muted-foreground py-16">
             <Loader2 className="w-5 h-5 animate-spin" /> <span className="text-sm">Loading…</span>
           </div>
+        ) : isError || data === undefined ? (
+          /* This branch must come before the empty check. Without it a failed
+             request fell through to "No company can see you" — telling someone
+             they are private at the one moment we cannot know whether they are.
+             On this screen in particular, a reassuring guess is the worst
+             possible answer. */
+          <QueryError what="who can see you" error={error} onRetry={() => refetch()} />
         ) : rows.length === 0 ? (
           <Card className="border border-border">
             <CardHeader>

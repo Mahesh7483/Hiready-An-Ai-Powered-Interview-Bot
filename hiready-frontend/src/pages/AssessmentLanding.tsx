@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,24 +19,32 @@ const AssessmentLanding = () => {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<TemplateDTO[] | null>(null);
   const [startingId, setStartingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<Error | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const data = await assessmentAPI.getTemplates();
-        if (!cancelled) setTemplates(data.templates);
-      } catch {
         if (!cancelled) {
-          toast.error("Failed to load assessments");
-          setTemplates([]);
+          setTemplates(data.templates);
+          setLoadError(null);
+        }
+      } catch (e) {
+        // setTemplates([]) rendered "No assessments published yet. Check back
+        // soon." on a server failure — sending the candidate away to wait for
+        // something that is already there.
+        if (!cancelled) {
+          setTemplates(null);
+          setLoadError(e instanceof Error ? e : new Error("Request failed"));
         }
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const startTemplate = async (templateId: string) => {
     setStartingId(templateId);
@@ -63,7 +72,13 @@ const AssessmentLanding = () => {
           Unified technical assessments: aptitude, coding, and a live voice interview — proctored, with scheduled breaks.
         </p>
 
-        {templates === null ? (
+        {loadError ? (
+          <QueryError
+            what="the available assessments"
+            error={loadError}
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
+        ) : templates === null ? (
           <div className="flex justify-center py-20">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
           </div>

@@ -1,43 +1,83 @@
-**Use your preferred IDE**
+# HiREady — web client
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+React 18 · TypeScript · Vite 5 · Tailwind · shadcn/ui · TanStack Query
 
-Follow these steps:
+The full project README, including architecture and the consent model, is one
+directory up. This file covers only what you need to work on the SPA.
+
+## Run it
 
 ```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+cp env.example .env     # then set VITE_API_URL
+npm install
+npm run dev             # http://localhost:8080
 ```
 
-**Edit a file directly in GitHub**
+The API must be running separately — see `../hiready-backend`. From the
+repository root, `npm run dev` starts both.
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Scripts
 
-**Use GitHub Codespaces**
+| Command | What it does |
+|---|---|
+| `npm run dev` | Vite dev server on :8080 |
+| `npm run build` | Production build into `dist/` |
+| `npm run preview` | Serve the built bundle locally |
+| `npm run lint` | ESLint |
+| `npm run typecheck` | `tsc -b` |
+| `npm test` | Vitest |
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+All five are meant to run in CI on every pull request. The workflow is written
+but not yet committed — see the Testing section of the root README — so for now
+run them before pushing.
 
-## What technologies are used for this project?
+## Configuration
 
-This project is built with:
+Copy `env.example` and read the comments in it — they say which variables
+matter and why.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+One rule worth repeating here: **every `VITE_`-prefixed variable is inlined
+into the public bundle at build time.** It is readable by anyone who opens
+devtools. No provider key, no secret, no credential may ever go in the
+frontend `.env`. Groq and Deepgram are called server-side; the browser
+receives a 60-second scoped Deepgram token and never sees a Groq key.
+
+Twelve documents in this directory used to instruct the opposite. They were
+written in March, never updated, and are gone.
+
+## Layout
+
+```
+src/
+  pages/        one file per route; App.tsx holds the route table
+  components/   shared UI — components/ui/ is vendored shadcn
+  lib/          API client, domain helpers, integrations
+  hooks/        shared React hooks
+  context/      AuthContext
+```
+
+## Talking to the API
+
+Use `apiFetch` / `apiJson` from `src/lib/api.ts`. Never call `fetch` against
+the API directly: `apiFetch` is where an expired session is handled — it
+clears the stale token and redirects to login. Nineteen call sites once
+bypassed it, so an expired JWT surfaced as a meaningless error toast on a page
+that then sat there broken.
+
+`src/lib/apiClient.test.ts` walks the source tree and fails the build on any
+new raw call, so this is enforced rather than remembered.
+
+## Loading, empty and error states
+
+A page must distinguish three things: still loading, genuinely empty, and
+could not ask. Use `QueryError` from `src/components/QueryError.tsx` for the
+third.
+
+The test is `isError || data === undefined`, **not** `isError` alone. When
+TanStack cannot reach the server it may pause a query rather than fail it,
+leaving `isLoading` false, `isError` false and `data` undefined — which slips
+past both branches and lands on the empty state. Eleven pages once told users
+"no results" for a backend that was simply down; the consent screen told
+candidates nobody could see their data.
+
+Never claim a list is empty while `data` is undefined.

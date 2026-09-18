@@ -24,8 +24,27 @@
     "noImplicitThis": true,
 
     "paths": {
-      "@/*": ["./src/*"]
-    }
+      "@/*": ["./src/*"],
+
+      // The suites are outside this package, so TypeScript's node_modules
+      // walk from their location never reaches ours and `vitest` resolves to
+      // nothing. Pinned explicitly rather than left to resolution order.
+      "vitest": ["./node_modules/vitest"],
+
+      // The test toolchain, same reason. NOT a "*" catch-all: that makes
+      // TypeScript resolve "react" to node_modules/react/index.js and stop
+      // looking for @types/react, so the whole app loses its types to
+      // implicit any. Tried it; 200 errors. Targeted entries only.
+      "@testing-library/*": ["./node_modules/@testing-library/*"],
+      "react-router-dom": ["./node_modules/react-router-dom"]
+    },
+
+    // Same reason: a file outside rootDir needs somewhere to resolve
+    // ambient package types from.
+    "typeRoots": ["./node_modules/@types"]
   },
-  "include": ["src"]
+  // The suites live at <repo>/tests/frontend, outside this package. Without
+  // them here tsc silently stops checking them — verified by planting a type
+  // error in a moved test and watching the build stay green.
+  "include": ["src", "../tests/frontend"]
 }

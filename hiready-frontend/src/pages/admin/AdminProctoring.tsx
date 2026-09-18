@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ChevronLeft, ChevronRight, ShieldAlert, Camera, Download } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -125,7 +126,14 @@ const AdminProctoring = () => {
                   </TableRow>
                 ))}
 
-              {!logsQuery.isLoading && data?.logs.length === 0 && (
+              {!logsQuery.isLoading && (logsQuery.isError || logsQuery.data === undefined) && (
+                <TableRow>
+                  <TableCell colSpan={5} className="py-8">
+                    <QueryError compact what="proctor events" error={logsQuery.error} onRetry={() => logsQuery.refetch()} />
+                  </TableCell>
+                </TableRow>
+              )}
+              {!logsQuery.isLoading && !logsQuery.isError && data?.logs.length === 0 && (
                 <TableRow>
                   <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
                     No proctor events found — clean sessions so far.

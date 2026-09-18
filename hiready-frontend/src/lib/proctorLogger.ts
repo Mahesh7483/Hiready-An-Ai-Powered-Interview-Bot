@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_BASE_URL, getAuthHeaders } from "./api";
+import { apiFetch } from "./api";
 
 export interface ProctorEvent {
   event: string;
@@ -15,8 +14,12 @@ export interface ProctorEvent {
  */
 export async function sendProctorLog(log: ProctorEvent): Promise<void> {
   try {
-    await axios.post(`${API_BASE_URL}/interview/proctor-log`, log, {
-      headers: getAuthHeaders(),
+    // This was the only axios call in the codebase — a whole HTTP library for
+    // one POST, and the one call that skipped the shared 401 handling.
+    await apiFetch("/interview/proctor-log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(log),
     });
   } catch {
     // Silently fail — proctoring logs are best-effort and must never block the interview

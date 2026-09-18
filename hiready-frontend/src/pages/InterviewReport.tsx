@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -9,7 +10,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { toast } from "sonner";
 import { attachInterviewAnalysis } from "@/lib/historyApi";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { API_BASE_URL, getAuthHeaders } from "@/lib/api";
+import { API_BASE_URL, getAuthHeaders, apiFetch } from "@/lib/api";
 
 interface ConversationEntry {
   role: "interviewer" | "user";
@@ -58,6 +59,7 @@ const EVENT_LABELS: Record<string, string> = {
 
 const InterviewReport = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState<Error | null>(null);
   const [conversation, setConversation] = useState<ConversationEntry[]>([]);
   const [proctorLogs, setProctorLogs] = useState<ProctorLogEntry[]>([]);
   const [integrity, setIntegrity] = useState<{ violations: number; maxViolations: number; terminated: boolean } | null>(null);
@@ -147,6 +149,7 @@ const InterviewReport = () => {
 
   const analyzeInterviewWithLLM = async (conversationData: ConversationEntry[]) => {
     setIsAnalyzing(true);
+    setAnalysisError(null);
 
     try {
       // Analysis runs server-side — no API key is exposed to the browser
@@ -157,7 +160,7 @@ const InterviewReport = () => {
       const savedConfig = sessionStorage.getItem("interviewConfig");
       const targetRole = savedConfig ? JSON.parse(savedConfig).role : undefined;
 
-      const response = await fetch(`${API_BASE_URL}/ai/interview-analyze`, {
+      const response = await apiFetch(`/ai/interview-analyze`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -182,8 +185,15 @@ const InterviewReport = () => {
       }
     } catch (error) {
       console.error("Error analyzing interview:", error);
-      toast.error("Failed to analyze interview. Using default report.");
-      // Keep default mock data
+      /**
+       * This used to keep the default state and render the full report —
+       * bar chart, radar chart, score cards — showing 0/100 in every category
+       * against a role of "Front-end Developer" that the candidate may never
+       * have chosen. A scored rejection is a serious thing to show someone.
+       * Inventing one because a request failed is worse than showing nothing.
+       */
+      toast.error("Could not analyse this interview.");
+      setAnalysisError(error instanceof Error ? error : new Error("Analysis failed"));
     } finally {
       setIsAnalyzing(false);
     }
@@ -205,6 +215,43 @@ const InterviewReport = () => {
     { skill: 'Adaptability', A: reportData.skillsAssessment.adaptability, fullMark: 100 },
     { skill: 'Teamwork', A: reportData.skillsAssessment.teamwork, fullMark: 100 }
   ];
+
+  /**
+   * A failed analysis must not render a report.
+   *
+   * Every score below is derived from reportData, whose initial state is zero
+   * in every category with the role hardcoded to "Front-end Developer". Keeping
+   * that on failure drew a complete, professional-looking report — bar chart,
+   * radar chart, three score cards — telling the candidate they scored 0/100
+   * across the board for a job they may never have applied for.
+   */
+  if (analysisError && !isAnalyzing) {
+    return (
+      <DashboardLayout>
+        <div className="p-6 lg:p-8 max-w-3xl mx-auto">
+          <div className="flex items-center gap-4 mb-8">
+            <Link to="/mastery">
+              <Button variant="ghost" size="sm">
+                <ArrowLeft className="mr-2 w-4 h-4" />
+                Back to Dashboard
+              </Button>
+            </Link>
+            <div className="h-8 w-px bg-border" />
+            <h1 className="text-2xl font-bold text-foreground">Interview Feedback Report</h1>
+          </div>
+          <QueryError
+            what="the analysis of this interview"
+            error={analysisError}
+            onRetry={() => void loadAndAnalyzeInterview()}
+          />
+          <p className="text-sm text-muted-foreground text-center mt-4">
+            Your answers were not lost — they are saved with the session and can be
+            analysed again.
+          </p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>

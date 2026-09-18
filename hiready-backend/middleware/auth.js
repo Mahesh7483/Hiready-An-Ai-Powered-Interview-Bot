@@ -53,6 +53,23 @@ async function accountStillExists(userId) {
  * Attaches `req.user = { id }` on success; rejects otherwise.
  */
 async function requireAuth(req, res, next) {
+  /**
+   * Idempotent: mounting this twice on one path must cost what mounting it
+   * once costs.
+   *
+   * /api/ai mounts it at the app level so the rate limiter that keys on
+   * req.user.id has a user to key on, and aiRoutes keeps its own so the
+   * router can never be served unauthenticated if it is mounted elsewhere.
+   * Without this guard the second pass repeats the whole check — and when the
+   * database is unreachable, accountStillExists returns true via its catch
+   * WITHOUT populating the TTL cache, so each pass pays the full mongoose
+   * buffer timeout. Two passes, twice the wait, for an answer already known.
+   *
+   * req.user is set only by this file and middleware/company.js. Nothing
+   * derived from the request can forge it.
+   */
+  if (req.user && req.user.id) return next();
+
   const header = req.headers.authorization || "";
   const token = header.startsWith("Bearer ") ? header.slice(7).trim() : null;
 
@@ -103,11 +120,15 @@ async function requireAdmin(req, res, next) {
   }
 
   try {
-    const user = await User.findById(payload.id).select("role").lean();
+    // `email` is fetched alongside `role` so the audit trail can name WHO did
+    // something. Every AuditLog row used to store an empty adminEmail: the
+    // writers read req.user.email, and this only ever set { id }. An audit log
+    // that cannot identify the actor does not audit anything.
+    const user = await User.findById(payload.id).select("role email").lean();
     if (!user || user.role !== "admin") {
       return res.status(403).json({ error: "Admin access required" });
     }
-    req.user = { id: payload.id };
+    req.user = { id: payload.id, email: user.email || "" };
     return next();
   } catch (err) {
     console.error("Admin auth error:", err.message);

@@ -10,19 +10,25 @@
     "dev:backend": "npm run dev --prefix hiready-backend",
     "dev:frontend": "npm run dev --prefix hiready-frontend",
     "dev": "concurrently \"npm run dev --prefix hiready-backend\" \"npm run dev --prefix hiready-frontend\"",
-    "lint": "npm run lint --prefix hiready-frontend && npm run lint --prefix hiready-backend",
+    "lint": "npm run lint --prefix hiready-frontend && npm run lint --prefix hiready-backend && npm run lint:tests",
     "lint:frontend": "npm run lint --prefix hiready-frontend",
     "lint:backend": "npm run lint --prefix hiready-backend",
     "typecheck": "npm run typecheck --prefix hiready-frontend",
     "typecheck:frontend": "npm run typecheck --prefix hiready-frontend",
-    "test": "npm test --prefix hiready-backend && npm run typecheck --prefix hiready-frontend",
+    "test": "npm test --prefix hiready-backend && npm run typecheck --prefix hiready-frontend && npm run test --prefix hiready-frontend",
     "test:backend": "npm test --prefix hiready-backend",
-    "install:all": "npm ci --prefix hiready-backend && npm ci --prefix hiready-frontend"
+    "install:all": "npm ci --prefix hiready-backend && npm ci --prefix hiready-frontend",
+    "seed": "npm run seed --prefix hiready-backend",
+    "smoke": "npm run smoke --prefix hiready-backend",
+    "lint:tests": "eslint tests"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "@eslint/js": "^10.0.1",
+    "concurrently": "^9.1.2",
+    "eslint": "^10.10.0",
+    "typescript-eslint": "^8.70.0"
   }
 }

@@ -168,7 +168,15 @@ router.post('/submit/:questionId', requireAuth, execLimiter, async (req, res) =>
     if (code.length > MAX_CODE_LENGTH) return res.status(400).json({ error: 'Code too long (max 100KB)' });
     if (!mongoose.Types.ObjectId.isValid(req.params.questionId)) return res.status(400).json({ error: 'Invalid questionId' });
 
-    const question = await CodingQuestion.findOne({ _id: req.params.questionId, isActive: true }).lean();
+    // isPublished matters as much here as on run-tests above: a draft question
+    // is one an admin is still editing. Without it a candidate could submit
+    // against an unpublished question and bank a score for work that is not
+    // part of any assessment.
+    const question = await CodingQuestion.findOne({
+      _id: req.params.questionId,
+      isActive: true,
+      isPublished: true,
+    }).lean();
     if (!question) return res.status(404).json({ error: 'Question not found' });
     const cases = (question.testCases || []).slice(0, MAX_TEST_CASES);
     if (cases.length === 0) return res.status(400).json({ error: 'Question has no test cases' });
@@ -249,7 +257,16 @@ router.post('/validate', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/languages', (req, res) => {
+/**
+ * The only route in this file that did not require a token.
+ *
+ * It returns a static list and leaks nothing, so this is consistency rather
+ * than a breach — but "every sibling is guarded and this one is not" is how a
+ * genuine gap hides in plain sight later, and nothing needs this list before
+ * signing in. Found by scripts/audit-routes.js, which is worth running when
+ * adding a route.
+ */
+router.get('/languages', requireAuth, (req, res) => {
   const languages = [
     { id: 'python', name: 'Python', extension: 'py', version: '3.11' },
     { id: 'javascript', name: 'JavaScript (Node.js)', extension: 'js', version: '20.x' },

@@ -1,26 +1,35 @@
-
-# secrets
+# ─── Secrets ────────────────────────────────────────────────────────────────
+# Every real env file, at any depth. The templates are called env.example
+# (no leading dot) precisely so they cannot be caught by these patterns and
+# cannot be mistaken for a live file.
 .env
-**/.env
-node_modules
-dist
-build
-.vscode
-.DS_Store
-.env
-.env.local
 .env.*
+**/.env
+**/.env.*
+
+# ─── Dependencies and build output ──────────────────────────────────────────
 node_modules/
 dist/
 build/
-.git_disabled/
-
-# build artifacts
 *.tsbuildinfo
 
-# internal tooling
+# ─── Editors and OS ─────────────────────────────────────────────────────────
+.vscode/
+.DS_Store
+
+# ─── Local tooling, not part of the project ─────────────────────────────────
 .opencode/
-.github/
+
+# An abandoned nested git repository left inside hiready-frontend/. Ignoring
+# it does not untrack what was already committed — that was removed from the
+# index separately.
+.git_disabled/
+
+# ─── Real user data ─────────────────────────────────────────────────────────
 # Row dumps written by scripts/cleanupOrphanedUserData.js before it deletes.
-# Real user data — never commit these.
 hiready-backend/backups/
+
+# NOTE: .github/ is deliberately NOT ignored.
+# It was, for the life of this repository, which is why .github/workflows/ci.yml
+# sat on disk fully written and never ran once. A CI config that cannot be
+# committed is not CI.

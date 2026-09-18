@@ -1,6 +1,6 @@
 import * as pdfjsLib from "pdfjs-dist";
 import mammoth from "mammoth";
-import { API_BASE_URL, getAuthHeaders } from "./api";
+import { apiFetch, API_BASE_URL } from "./api";
 import PdfWorker from "./pdfWorker?worker";
 
 // Bundle the worker ourselves (with hex-method polyfills baked in) instead of
@@ -242,9 +242,9 @@ export async function analyzeResumeWithLLM(
 async function postAiTool<T>(path: string, body: Record<string, unknown>): Promise<T> {
   let response: Response;
   try {
-    response = await fetch(`${API_BASE_URL}/ai/${path}`, {
+    response = await apiFetch(`/ai/${path}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
     });
   } catch {

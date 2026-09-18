@@ -1,0 +1,175 @@
+{
+  "experiment": "exp5_sandbox",
+  "question": "Do the sandbox isolation controls fire as specified, and what do they cost per execution?",
+  "provenance": {
+    "timestampUtc": "2026-09-16T04:11:43.885Z",
+    "gitRevision": "c60cdd7",
+    "node": "v26.7.0",
+    "platform": "win32 10.0.26200 x64",
+    "cpuModel": "13th Gen Intel(R) Core(TM) i5-1340P",
+    "cpuCount": 16,
+    "totalMemGb": 15.6,
+    "groqModel": "openai/gpt-oss-120b",
+    "reps": 20,
+    "sandboxMode": "direct"
+  },
+  "caveat": "Isolation claims apply to the sandbox mode reported in provenance.sandboxMode. The nsjail path enforces kernel-level address-space, CPU and file-size limits; the cross-platform fallback path enforces time, output volume and environment stripping only.",
+  "controls": {
+    "passed": 9,
+    "total": 9,
+    "results": [
+      {
+        "id": "T1",
+        "property": "CPU time limit terminates a non-terminating program",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 2261,
+        "exitCode": 1,
+        "timedOut": true,
+        "stdoutLen": 0
+      },
+      {
+        "id": "T2",
+        "property": "Partial output is preserved when a run is killed",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 2232,
+        "exitCode": 1,
+        "timedOut": true,
+        "stdoutLen": 8
+      },
+      {
+        "id": "T3",
+        "property": "Runtime errors surface on stderr rather than as success",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 173,
+        "exitCode": 1,
+        "timedOut": false,
+        "stdoutLen": 0
+      },
+      {
+        "id": "T4",
+        "property": "Server secrets are absent from the child environment",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 162,
+        "exitCode": 0,
+        "timedOut": false,
+        "stdoutLen": 9
+      },
+      {
+        "id": "T5",
+        "property": "stdin reaches the program when supplied",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 138,
+        "exitCode": 0,
+        "timedOut": false,
+        "stdoutLen": 11
+      },
+      {
+        "id": "T6",
+        "property": "stdin is closed (EOF) when no input is supplied, so reads do not hang",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 141,
+        "exitCode": 0,
+        "timedOut": false,
+        "stdoutLen": 5
+      },
+      {
+        "id": "T7",
+        "property": "Output volume is capped rather than exhausting server memory",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 340,
+        "exitCode": 0,
+        "timedOut": false,
+        "stdoutLen": 524288
+      },
+      {
+        "id": "T8",
+        "property": "Working directory is the only writable location the program is given",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 516,
+        "exitCode": 0,
+        "timedOut": false,
+        "stdoutLen": 14
+      },
+      {
+        "id": "T9",
+        "property": "A crash in one run does not affect the next run",
+        "pass": true,
+        "thrown": null,
+        "sandboxMode": "direct",
+        "durationMs": 152,
+        "exitCode": 3,
+        "timedOut": false,
+        "stdoutLen": 0
+      }
+    ]
+  },
+  "byLanguage": {
+    "javascript": {
+      "coldStartMs": 157,
+      "warmMs": {
+        "n": 20,
+        "mean": 113.75,
+        "sd": 35.864,
+        "min": 67,
+        "p50": 110.5,
+        "p95": 169.25,
+        "max": 193
+      },
+      "successRate": {
+        "p": 1,
+        "lo": 0.8389,
+        "hi": 1
+      }
+    },
+    "python": {
+      "coldStartMs": 67,
+      "warmMs": {
+        "n": 20,
+        "mean": 90.7,
+        "sd": 23.771,
+        "min": 57,
+        "p50": 87.5,
+        "p95": 124.65,
+        "max": 137
+      },
+      "successRate": {
+        "p": 1,
+        "lo": 0.8389,
+        "hi": 1
+      }
+    },
+    "java": {
+      "coldStartMs": 985,
+      "warmMs": {
+        "n": 20,
+        "mean": 830.25,
+        "sd": 76.158,
+        "min": 698,
+        "p50": 847,
+        "p95": 932.5,
+        "max": 961
+      },
+      "successRate": {
+        "p": 1,
+        "lo": 0.8389,
+        "hi": 1
+      }
+    }
+  }
+}

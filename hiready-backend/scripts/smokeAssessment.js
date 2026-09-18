@@ -107,7 +107,26 @@ async function main() {
       questions.status === 200 && Array.isArray(questions.body) && questions.body.length === 5,
       `got ${Array.isArray(questions.body) ? questions.body.length : questions.text.slice(0, 80)}`);
 
-    check('4  the answer key never reaches the client',
+    /**
+     * A question with no options is not answerable, and counting questions
+     * does not notice. The route projected its option paths with the string
+     * form of .select(), which splits on whitespace — so 'Option A'..'Option D'
+     * were never requested and every candidate got a bare question stem with
+     * nothing to choose from. Check 3 passed throughout: there were still
+     * five of them.
+     */
+    const missingOptions = (questions.body || []).filter(
+      (q) => !['Option A', 'Option B', 'Option C', 'Option D'].every(
+        (k) => q[k] !== undefined && q[k] !== null && String(q[k]).length > 0
+      )
+    );
+    check('4  every served question carries all four options',
+      questions.body && questions.body.length > 0 && missingOptions.length === 0,
+      missingOptions.length
+        ? `${missingOptions.length} unanswerable; first has keys [${Object.keys(missingOptions[0]).join(', ')}]`
+        : '');
+
+    check('5  the answer key never reaches the client',
       !/"Answer"/.test(questions.text) && !/answerKey/.test(questions.text));
 
     // ── submit, answering everything correctly ─────────────────────────────
@@ -120,10 +139,10 @@ async function main() {
     });
     // THE regression. This returned 500 'Failed to submit section' for every
     // assessment ever attempted, because pushing the result threw at the push.
-    check('5  submitting a section succeeds', submitted.status === 200,
+    check('6  submitting a section succeeds', submitted.status === 200,
       `status ${submitted.status} ${submitted.text.slice(0, 160)}`);
 
-    check('6  the attempt is now complete',
+    check('7  the attempt is now complete',
       submitted.body?.attempt?.status === 'completed',
       `status=${submitted.body?.attempt?.status}`);
 
@@ -131,25 +150,25 @@ async function main() {
     const finished = await AssessmentAttempt.findById(attemptId).lean();
     const [section] = finished.sectionResults || [];
 
-    check('7  a section result was persisted as an object, not a string',
+    check('8  a section result was persisted as an object, not a string',
       Boolean(section) && typeof section === 'object' && !Array.isArray(section),
       `sectionResults=${JSON.stringify(finished.sectionResults).slice(0, 120)}`);
 
-    check('8  it carries the score, the maximum and the type',
+    check('9  it carries the score, the maximum and the type',
       Boolean(section) && section.type === 'aptitude' && section.maxScore === 5 && section.score === 5,
       section ? `type=${section.type} score=${section.score}/${section.maxScore}` : 'no section');
 
-    check('9  meta retained the question ids the no-repeat logic needs',
+    check('10 meta retained the question ids the no-repeat logic needs',
       Boolean(section?.meta?.questionIds?.length === 5),
       `meta=${JSON.stringify(section?.meta || {}).slice(0, 120)}`);
 
-    check('10 an integrity verdict was stamped',
+    check('11 an integrity verdict was stamped',
       ['clean', 'flagged', 'invalidated'].includes(finished.integrityVerdict),
       `verdict=${finished.integrityVerdict}`);
 
     // ── the report the student sees ────────────────────────────────────────
     const report = await call(`/api/assessment/attempt/${attemptId}/report`, { as: student._id });
-    check('11 the report renders a real score', report.status === 200 && report.text.includes('5'),
+    check('12 the report renders a real score', report.status === 200 && report.text.includes('5'),
       `status ${report.status} ${report.text.slice(0, 160)}`);
 
     // ── and what a recruiter would read off it ─────────────────────────────
@@ -158,7 +177,7 @@ async function main() {
     const percent = section && section.maxScore > 0
       ? Math.round((section.score / section.maxScore) * 100)
       : null;
-    check('12 a recruiter scorecard can compute a percent from it', percent === 100,
+    check('13 a recruiter scorecard can compute a percent from it', percent === 100,
       `percent=${percent}`);
   } finally {
     const attempts = student ? await AssessmentAttempt.deleteMany({ userId: student._id }) : { deletedCount: 0 };

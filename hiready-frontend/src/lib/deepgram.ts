@@ -1,3 +1,4 @@
+import { apiFetch } from "@/lib/api";
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
 import type { ListenLiveClient } from "@deepgram/sdk";
 import { API_BASE_URL, getAuthHeaders } from "./api";
@@ -15,9 +16,7 @@ interface DeepgramResultsMessage {
  * The real Deepgram API key never leaves the server.
  */
 async function getAccessToken(): Promise<string> {
-  const res = await fetch(`${API_BASE_URL}/ai/stt-token`, {
-    headers: getAuthHeaders(),
-  });
+  const res = await apiFetch(`/ai/stt-token`, {});
   if (!res.ok) {
     throw new Error(`Failed to obtain speech token (${res.status})`);
   }
@@ -174,11 +173,10 @@ export class DeepgramService {
    */
   async transcribeAudioFile(audioBlob: Blob): Promise<string> {
     try {
-      const res = await fetch(`${API_BASE_URL}/ai/transcribe`, {
+      const res = await apiFetch(`/ai/transcribe`, {
         method: "POST",
         headers: {
           "Content-Type": audioBlob.type || "audio/webm",
-          ...getAuthHeaders(),
         },
         body: audioBlob,
       });

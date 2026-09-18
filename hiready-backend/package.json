@@ -13,7 +13,12 @@
     "typecheck": "node scripts/check-syntax.js",
     "smoke": "node scripts/smokeAssessment.js && node scripts/smokeHireFlow.js",
     "smoke:assessment": "node scripts/smokeAssessment.js",
-    "smoke:hire": "node scripts/smokeHireFlow.js"
+    "smoke:hire": "node scripts/smokeHireFlow.js",
+    "seed": "node scripts/seed.js",
+    "seed:export": "node scripts/export-seed.js",
+    "exp:check": "node experiments/check-pipeline-sync.js && node experiments/check-results-freshness.js",
+    "exp:estimate": "node experiments/run-all.js --estimate",
+    "audit:routes": "node scripts/audit-routes.js"
   },
   "keywords": [],
   "author": "",

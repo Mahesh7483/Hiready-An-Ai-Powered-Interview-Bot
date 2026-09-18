@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useTheme } from "next-themes";
 import { toast } from "sonner";
 
 import DashboardLayout from "@/components/DashboardLayout";
+import { DesktopOnly } from "@/components/DesktopOnly";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +30,7 @@ import {
   SubmissionResult, type CodeReview, type SubmissionOutcome,
 } from "@/components/coding/SubmissionResult";
 import { useStrictProctoring, type ProctoringMode } from "@/hooks/useStrictProctoring";
-import { API_BASE_URL, getAuthHeaders } from "@/lib/api";
+import { API_BASE_URL, getAuthHeaders, apiFetch } from "@/lib/api";
 import {
   codeKey, DEFAULT_CODE, DEFAULT_MINUTES, DURATION_CHOICES, LANGUAGES,
 } from "@/lib/coding";
@@ -63,7 +63,6 @@ function useIsDesktop(): boolean {
 
 const CodingInterview = () => {
   const navigate = useNavigate();
-  const { resolvedTheme } = useTheme();
   const isDesktop = useIsDesktop();
 
   const [phase, setPhase] = useState<Phase>("start");
@@ -104,7 +103,7 @@ const CodingInterview = () => {
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE_URL}/code/questions?limit=100`, { headers: getAuthHeaders() });
+        const res = await apiFetch(`/code/questions?limit=100`, {});
         if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Failed to load (${res.status})`);
         const data = await res.json();
         if (!cancelled) setQuestions(data.questions ?? []);
@@ -146,9 +145,9 @@ const CodingInterview = () => {
     setReviewLoading(true);
     setReviewError(null);
     try {
-      const res = await fetch(`${API_BASE_URL}/ai/code-review`, {
+      const res = await apiFetch(`/ai/code-review`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: source, language, problemTitle: title, outcome: outcomeLabel }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Review failed (${res.status})`);
@@ -172,9 +171,9 @@ const CodingInterview = () => {
     submittingRef.current = true;
     setIsSubmitting(true);
     try {
-      const res = await fetch(`${API_BASE_URL}/code/submit/${question._id}`, {
+      const res = await apiFetch(`/code/submit/${question._id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: source, language }),
       });
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `Submission failed (${res.status})`);
@@ -245,9 +244,9 @@ const CodingInterview = () => {
     setExecutionResult(null);
     if (!isDesktop) setMobileTab("output");
     try {
-      const res = await fetch(`${API_BASE_URL}/code/run-tests/${question._id}`, {
+      const res = await apiFetch(`/code/run-tests/${question._id}`, {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...getAuthHeaders() },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code, language }),
       });
       const data = await res.json().catch(() => ({}));
@@ -470,13 +469,17 @@ const CodingInterview = () => {
   // ── workspace ────────────────────────────────────────────────────────────
   if (!question) return null;
 
+  // No `theme` prop: CodeEditor owns its own default and its own picker. This
+  // used to pass resolvedTheme from next-themes, which had no provider mounted
+  // anywhere in the app — so it was permanently undefined and the expression
+  // always forced the light theme, overriding an editor default nobody had
+  // chosen to change.
   const editor = (
     <CodeEditor
       language={language}
       code={code}
       onChange={setCode}
       readOnly={isRunning || isSubmitting}
-      theme={resolvedTheme === "dark" ? "vs-dark" : "vs"}
       height="100%"
       showToolbar
       onRun={runTests}
@@ -569,4 +572,15 @@ const CodingInterview = () => {
   );
 };
 
-export default CodingInterview;
+/**
+ * Wrapped at the export, not inside the component: the device check has to
+ * run BEFORE any proctoring effect mounts, and a hook inside would already
+ * have requested fullscreen and started the webcam monitor.
+ */
+const CodingInterviewGuarded = () => (
+  <DesktopOnly activity="coding interview">
+    <CodingInterview />
+  </DesktopOnly>
+);
+
+export default CodingInterviewGuarded;

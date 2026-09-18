@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import HireLayout from "@/components/hire/HireLayout";
+import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -20,7 +21,7 @@ import { hireAPI } from "@/lib/hireApi";
 const HireDiscover = () => {
   const [minScore, setMinScore] = useState("0");
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ["hire", "discover", minScore],
     queryFn: () => hireAPI.discover({ minScore: Number(minScore), limit: 50 }),
   });
@@ -64,6 +65,8 @@ const HireDiscover = () => {
         <div className="flex items-center gap-3 text-muted-foreground py-16">
           <Loader2 className="w-5 h-5 animate-spin" /> <span className="text-sm">Searching…</span>
         </div>
+      ) : isError || data === undefined ? (
+        <QueryError what="matching candidates" error={error} onRetry={() => refetch()} />
       ) : rows.length === 0 ? (
         <Card className="border border-border">
           <CardHeader>

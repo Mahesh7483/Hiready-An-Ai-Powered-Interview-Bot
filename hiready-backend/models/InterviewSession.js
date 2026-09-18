@@ -47,20 +47,21 @@ const InterviewSessionSchema = new mongoose.Schema(
 
 InterviewSessionSchema.index({ user: 1, createdAt: -1 });
 
-// Cascade deletion hook: purge associated ProctorLog records and webcam snapshots
-InterviewSessionSchema.pre('findOneAndDelete', async function () {
-  try {
-    const doc = await this.model.findOne(this.getQuery());
-    if (doc) {
-      const ProctorLog = mongoose.model('ProctorLog');
-      await ProctorLog.deleteMany({
-        $or: [{ sessionId: doc.sessionId }, { sessionId: String(doc._id) }],
-        userId: doc.user
-      });
-    }
-  } catch (err) {
-    console.error('Cascade deletion hook error in InterviewSession:', err.message);
-  }
-});
+/**
+ * There is deliberately NO cascade hook here.
+ *
+ * A pre('findOneAndDelete') hook used to sit at this spot, and it had never
+ * run once: nothing anywhere calls InterviewSession.findOneAndDelete — the
+ * delete routes use deleteOne and deleteMany, which that hook does not fire
+ * for. Dead code is bad enough; this was a trap. It purged ProctorLog and NOT
+ * ProctorSnapshot, so the day someone switched a route to findOneAndDelete
+ * they would have silently started orphaning biometric frames — the exact
+ * inconsistency the route-level cascade was fixed to close.
+ *
+ * The real cascade lives where it can be read and tested, in
+ * routes/interviewSessionRoutes.js and routes/adminRoutes.js, and
+ * tests/backend/userIdIntegrity.test.js asserts both branches delete
+ * ProctorSnapshot.
+ */
 
 module.exports = mongoose.model('InterviewSession', InterviewSessionSchema);

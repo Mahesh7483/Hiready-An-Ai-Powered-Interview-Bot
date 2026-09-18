@@ -109,11 +109,10 @@ export class LLMService {
    * Call the backend AI proxy with the current conversation.
    */
   private async chatWithBackend(): Promise<string> {
-    const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+    const response = await apiFetch(`/ai/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...getAuthHeaders(),
       },
       body: JSON.stringify({ messages: this.conversationHistory.slice(-20) }),
     });
@@ -157,11 +156,10 @@ export class LLMService {
   async getInitialQuestion(): Promise<string> {
     try {
       // Kickoff instruction is sent to the model but not persisted in history
-      const response = await fetch(`${API_BASE_URL}/ai/chat`, {
+      const response = await apiFetch(`/ai/chat`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...getAuthHeaders(),
         },
         body: JSON.stringify({
           messages: [
@@ -191,8 +189,21 @@ export class LLMService {
       return initialQuestion;
     } catch (error) {
       console.error("Error getting initial question:", error);
-      // Fallback question if API fails
-      return "Hello! Thank you for joining today's interview. Let's start with a simple question - can you tell me a bit about yourself and your background?";
+      /**
+       * No canned question here.
+       *
+       * Returning a scripted opener when the model is unreachable started an
+       * interview that could not continue: the candidate answered, the NEXT
+       * call threw for the same reason, and they were stranded mid-session
+       * with their first answer already given. Nothing on screen had said
+       * anything was wrong.
+       *
+       * Failing at question one is recoverable. Failing at question two, after
+       * the candidate has committed, is not.
+       */
+      throw error instanceof Error
+        ? error
+        : new Error("Could not reach the interviewer. Please try again.");
     }
   }
 
@@ -241,8 +252,22 @@ export async function checkAIAvailability(): Promise<{
     return { available: false, error: "Sign in required for the voice interview" };
   }
   try {
-    const res = await apiFetch("/test");
+    /**
+     * /health, not /test. /test returns 200 as long as the process is alive,
+     * so "AI available" meant "the server is up" — it passed with no database,
+     * no GROQ_API_KEY, and no chance of the interview working. /health reports
+     * the database state and whether the provider keys are configured, and
+     * returns 503 when it cannot serve.
+     */
+    const res = await apiFetch("/health");
     if (!res.ok) return { available: false, error: `Backend unreachable (${res.status})` };
+    const body = await res.json().catch(() => null);
+    if (body && body.providers && body.providers.groq === false) {
+      return { available: false, error: "The interviewer is not configured on this server" };
+    }
+    if (body && body.database && body.database !== "connected") {
+      return { available: false, error: "The server cannot reach its database right now" };
+    }
     return { available: true };
   } catch {
     return { available: false, error: "Cannot reach the backend server" };
