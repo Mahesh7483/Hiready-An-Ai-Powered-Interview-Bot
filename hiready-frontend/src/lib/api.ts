@@ -1,3 +1,5 @@
+import { clearSession } from "./session";
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -27,7 +29,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   // ProtectedRoute handles that case).
   if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/auth/")) {
     if (localStorage.getItem("token")) {
-      localStorage.removeItem("token");
+      clearSession();
       if (!window.location.pathname.startsWith("/login")) {
         window.location.assign("/login");
       }

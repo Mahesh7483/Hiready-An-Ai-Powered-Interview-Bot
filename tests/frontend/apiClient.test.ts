@@ -78,7 +78,9 @@ describe("the API client is the only way to reach the backend", () => {
     // routing everything through apiFetch stops buying anything.
     const client = readFileSync(join(SRC, "lib", "api.ts"), "utf8");
     expect(client).toMatch(/res\.status === 401/);
-    expect(client).toMatch(/localStorage\.removeItem\("token"\)/);
+    expect(client).toMatch(/clearSession\(\)/);
+    const session = readFileSync(join(SRC, "lib", "session.ts"), "utf8");
+    expect(session).toMatch(/localStorage\.removeItem\("token"\)/);
     expect(client).toMatch(/window\.location\.assign\("\/login"\)/);
     // And must not loop on the auth endpoints themselves.
     expect(client).toMatch(/!path\.startsWith\("\/auth\/"\)/);

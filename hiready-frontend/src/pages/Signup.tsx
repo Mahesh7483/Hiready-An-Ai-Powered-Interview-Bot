@@ -7,6 +7,7 @@ import { GraduationCap, Mail, Lock, User } from "lucide-react";
 import { toast } from "sonner";
 import { signInWithGoogle } from "@/lib/auth";
 import { authAPI } from "@/lib/api";
+import { saveSession } from "@/lib/session";
 
 const Signup = () => {
   const navigate = useNavigate();
@@ -42,11 +43,8 @@ const Signup = () => {
 
       toast.success(response.message || "Account created successfully!");
       // Signup now auto-logins — persist the backend session
-      if (response.token) {
-        localStorage.setItem("token", response.token);
-      }
-      if (response.user) {
-        localStorage.setItem("user", JSON.stringify(response.user));
+      if (response.token && response.user) {
+        saveSession(response.token, response.user);
         navigate("/mastery");
       } else {
         // Fallback: no session returned — ask the user to log in

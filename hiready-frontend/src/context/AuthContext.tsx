@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
 import { onAuthStateChangedListener, UserData, getCurrentUserFromStorage } from "@/lib/auth";
 import { auth } from "@/lib/firebase";
+import { SESSION_EVENT } from "@/lib/session";
 
 interface AuthContextType {
   user: UserData | null;
@@ -42,8 +43,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setLoading(false);
     });
 
+    // Email login, signup, logout and a 401 all write the session outside
+    // Firebase, so Firebase never reports them. Re-read storage when they
+    // announce a change, or when another tab signs in or out.
+    const syncFromStorage = () => {
+      const stored = getCurrentUserFromStorage();
+      const token = localStorage.getItem("token");
+      setUser(stored && token ? stored : null);
+    };
+    window.addEventListener(SESSION_EVENT, syncFromStorage);
+    window.addEventListener("storage", syncFromStorage);
+
     return () => {
       unsubscribe();
+      window.removeEventListener(SESSION_EVENT, syncFromStorage);
+      window.removeEventListener("storage", syncFromStorage);
     };
   }, []);
 
