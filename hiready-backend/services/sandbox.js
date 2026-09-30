@@ -8,6 +8,7 @@ const IS_WINDOWS = process.platform === 'win32';
 const MAX_OUTPUT_CHARS = 512 * 1024;
 const MAX_CONCURRENT = 4;
 const MAX_QUEUE = 100;
+const TS_TRANSPILE = path.join(__dirname, 'tsTranspile.js');
 
 function buildSandboxEnv(tempDir) {
   const env = { PATH: process.env.PATH || process.env.Path || '' };
@@ -74,14 +75,20 @@ const LANGUAGE_CONFIGS = {
     args: ['{file}'],
     timeout: 10000
   },
+  // Transpiled by the backend's own typescript package, then run with node.
+  // `npx ts-node` downloaded ts-node on every run, and ts-node 10 cannot load
+  // .ts files at all under Node 20.19+ ("Unknown file extension .ts").
   typescript: {
     extension: 'ts',
-    command: IS_WINDOWS ? 'npx.cmd' : 'npx',
-    args: ['--yes', 'ts-node', '{file}'],
+    compileCommand: process.execPath,
+    compileArgs: [TS_TRANSPILE, '{file}', 'main.js'],
+    command: process.execPath,
+    args: ['main.js'],
     timeout: 15000
   },
   java: {
     extension: 'java',
+    jvm: true,
     mainFile: 'Main.java',
     compileCommand: 'javac',
     compileArgs: ['{file}'],
@@ -93,6 +100,7 @@ const LANGUAGE_CONFIGS = {
     extension: 'go',
     command: 'go',
     args: ['run', '{file}'],
+    compilesOnRun: true,
     timeout: 15000
   },
   cpp: {
@@ -187,7 +195,7 @@ function killTree(child) {
   }
 }
 
-function runProcess(command, args, input, timeout, cwd, tempDir) {
+function runProcess(command, args, input, timeout, cwd, tempDir, identity = {}) {
   return new Promise((resolve) => {
     let child;
     try {
@@ -197,7 +205,8 @@ function runProcess(command, args, input, timeout, cwd, tempDir) {
         cwd,
         windowsHide: true,
         detached: !IS_WINDOWS,
-        env: buildSandboxEnv(cwd || tempDir || os.tmpdir())
+        env: buildSandboxEnv(cwd || tempDir || os.tmpdir()),
+        ...identity,
       });
     } catch (err) {
       resolve({
@@ -350,6 +359,128 @@ async function executeWithNsjail(config, tempDir, input, timeLimit, memoryLimit,
   return { ...result, sandbox: 'nsjail' };
 }
 
+/*
+ * The restricted runner: isolation for hosts where nsjail cannot run.
+ *
+ * nsjail needs to create namespaces, which ordinary container platforms
+ * (Render included) refuse. Without it the only other path was executeDirect,
+ * which runs the submission AS THE SERVER — able to read /proc/1/environ and
+ * so the JWT secret, the database password and every API key. Production
+ * rightly refuses that.
+ *
+ * This runner is enabled with SANDBOX_RUNNER=restricted and requires the API
+ * to run as root inside its container (the Dockerfile's default). Each
+ * execution then runs as its OWN random, unprivileged uid:
+ *   - the server's /proc/<pid>/environ is root-only, so its secrets are out
+ *     of reach;
+ *   - the exec dir is chowned to that uid with mode 0700, and no two runs
+ *     share a uid, so one submission cannot read, alter or signal another;
+ *   - CPU time, memory, file size, open files and process count are capped
+ *     with rlimits (the process cap is per uid, so a fork bomb stops itself);
+ *   - the wall-clock timeout kills the whole process group, as before.
+ *
+ * What it does NOT give, unlike nsjail: a private network or a private
+ * filesystem view. Submitted code can open outbound connections and read
+ * world-readable files (the app's source, which is public anyway). That is
+ * the trade for running on a host that forbids namespaces; it is written down
+ * here so nobody mistakes this for the jail.
+ */
+const RESTRICTED_UID_BASE = 100000;
+const RESTRICTED_UID_RANGE = 60000;
+const COMPILE_TIMEOUT_MS = Number(process.env.SANDBOX_COMPILE_TIMEOUT_MS) || 15000;
+
+function restrictedRunnerEnabled() {
+  return process.env.SANDBOX_RUNNER === 'restricted';
+}
+
+function restrictedLimitArgs({ cpuSeconds, memoryMb, fileMb = 64, maxProcs = 128 }) {
+  const int = (n) => Math.max(1, Math.floor(Number(n)) || 1);
+  const limits = [
+    `ulimit -t ${int(cpuSeconds)}`,
+    `ulimit -f ${int(fileMb) * 1024}`,
+    'ulimit -n 64',
+    `ulimit -u ${int(maxProcs)}`,
+    'ulimit -c 0',
+  ];
+  // RLIMIT_DATA covers heap and private mappings. A JVM reserves its whole
+  // heap up front and cannot start under it, so Java is held by -Xmx instead.
+  if (memoryMb) limits.push(`ulimit -d ${int(memoryMb) * 1024}`);
+  // The command and its arguments arrive as "$@", never spliced into the
+  // script, so nothing from a template or a filename is parsed as shell.
+  return ['-c', limits.join(' && ') + ' && exec "$@"', 'sandbox'];
+}
+
+function chownTree(dir, uid) {
+  fs.chownSync(dir, uid, uid);
+  for (const entry of fs.readdirSync(dir)) {
+    const p = path.join(dir, entry);
+    if (fs.lstatSync(p).isDirectory()) chownTree(p, uid);
+    else fs.chownSync(p, uid, uid);
+  }
+}
+
+async function executeRestricted(config, tempDir, input, timeLimit, memoryLimit, cpuLimit) {
+  if (typeof process.getuid !== 'function' || process.getuid() !== 0) {
+    // Refuse rather than quietly run as the server's own user.
+    throw new Error('SANDBOX_RUNNER=restricted requires the API to run as root so submissions can run as a separate user.');
+  }
+
+  const uid = RESTRICTED_UID_BASE + crypto.randomInt(0, RESTRICTED_UID_RANGE);
+  chownTree(tempDir, uid);
+  fs.chmodSync(tempDir, 0o700);
+  const identity = { uid, gid: uid };
+
+  const file = mainFileName(config);
+  const binary = binaryName();
+  const jvmMemory = config.jvm ? null : memoryLimit;
+
+  if (config.compileCommand) {
+    let compileArgs = (config.compileArgs || []).map((a) => a.replace('{file}', file).replace('{binary}', binary));
+    if (config.jvm) compileArgs = ['-J-Xmx256m', '-J-XX:+UseSerialGC', '-J-XX:TieredStopAtLevel=1', ...compileArgs];
+    const compile = await runProcess(
+      'bash',
+      [...restrictedLimitArgs({ cpuSeconds: COMPILE_TIMEOUT_MS / 1000, memoryMb: config.jvm ? null : 1024 }), config.compileCommand, ...compileArgs],
+      '', COMPILE_TIMEOUT_MS, tempDir, tempDir, identity
+    );
+    if (compile.exitCode !== 0 || compile.timedOut) {
+      return {
+        ...compile,
+        stdout: '',
+        stderr: 'Compilation error:\n' + (compile.timedOut ? 'Compilation timed out' : compile.stderr),
+        sandbox: 'restricted',
+      };
+    }
+  }
+
+  const runCommand = config.command === '{binaryPath}' ? path.join(tempDir, binary) : config.command;
+  let runArgs = (config.args || []).map((a) => a.replace('{file}', file).replace('{className}', 'Main').replace('{binary}', binary));
+  if (config.jvm) runArgs = [`-Xmx${memoryLimit}m`, '-XX:+UseSerialGC', '-XX:TieredStopAtLevel=1', ...runArgs];
+
+  // `go run` and ts-node compile inside the run step, so they get the
+  // compile allowance on top of the program's own limits.
+  const extraMs = config.compilesOnRun ? COMPILE_TIMEOUT_MS : 0;
+  const result = await runProcess(
+    'bash',
+    [
+      ...restrictedLimitArgs({
+        cpuSeconds: cpuLimit + extraMs / 1000,
+        memoryMb: config.compilesOnRun ? Math.max(jvmMemory || 0, 1024) : jvmMemory,
+      }),
+      runCommand,
+      ...runArgs,
+    ],
+    input, timeLimit + extraMs, tempDir, tempDir, identity
+  );
+  // An rlimit kill arrives as a bare signal with nothing on stderr, which
+  // reads to a candidate as the program silently doing nothing.
+  if (!result.timedOut && (result.signal === 'SIGXCPU' || result.signal === 'SIGKILL')) {
+    result.stderr += (result.stderr ? '\n' : '') + (result.signal === 'SIGXCPU'
+      ? `CPU time limit exceeded (${cpuLimit}s)`
+      : 'Killed: resource limit exceeded');
+  }
+  return { ...result, sandbox: 'restricted' };
+}
+
 function scrubPaths(result, tempDir) {
   const scrub = (s) => (typeof s === 'string' ? s.split(tempDir).join('[exec-dir]') : s);
   return {
@@ -377,6 +508,8 @@ async function executeInSandbox(options) {
     let result;
     if (detectNsjail()) {
       result = await executeWithNsjail(config, tempDir, input, timeLimit, memoryLimit, cpuLimit);
+    } else if (restrictedRunnerEnabled()) {
+      result = await executeRestricted(config, tempDir, input, timeLimit, memoryLimit, cpuLimit);
     } else {
       result = await executeDirect(config, tempDir, input, timeLimit);
     }
@@ -397,4 +530,4 @@ async function executeCode(options) {
   }
 }
 
-module.exports = { executeCode, executeInSandbox, LANGUAGE_CONFIGS, createTempDir, cleanupTempDir, buildRunCommand };
+module.exports = { executeCode, executeInSandbox, LANGUAGE_CONFIGS, createTempDir, cleanupTempDir, buildRunCommand, restrictedLimitArgs };
