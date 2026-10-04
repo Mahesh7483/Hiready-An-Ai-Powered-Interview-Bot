@@ -1,5 +1,4 @@
-import { apiFetch } from "@/lib/api";
-import { apiJson, getAuthHeaders, API_BASE_URL } from "./api";
+import { apiFetch, apiJson } from "@/lib/api";
 
 // ── Resume analysis history ────────────────────────────────────────────
 export interface ResumeHistoryItem {

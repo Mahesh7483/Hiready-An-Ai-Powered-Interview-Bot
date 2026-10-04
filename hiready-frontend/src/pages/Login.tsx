@@ -7,6 +7,7 @@ import { GraduationCap, Mail, Lock } from "lucide-react";
 import { toast } from "sonner";
 import { signInWithGoogle } from "@/lib/auth";
 import { authAPI } from "@/lib/api";
+import { saveSession } from "@/lib/session";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -35,10 +36,7 @@ const Login = () => {
       }
 
       toast.success(response.message || "Login successful!");
-      localStorage.setItem("token", response.token);
-      if (response.user) {
-        localStorage.setItem("user", JSON.stringify(response.user));
-      }
+      saveSession(response.token, response.user);
       navigate("/mastery");
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : "";

@@ -15,6 +15,7 @@ the graded outcome, never the proctoring evidence behind it.
 
 - [Architecture](#architecture)
 - [Quickstart](#quickstart)
+  - [Deploying (Render + MongoDB Atlas)](#deploying-render--mongodb-atlas)
 - [Configuration](#configuration)
 - [The student surface](#the-student-surface)
 - [The employer surface](#the-employer-surface)
@@ -119,6 +120,29 @@ Compose reads a `.env` at the repository root and refuses to start without
 ```sh
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
+
+### Deploying (Render + MongoDB Atlas)
+
+[`render.yaml`](render.yaml) describes the whole deployment: the API as a
+Docker web service, the SPA as a static site with the rewrite that client-side
+routes need. In the Render dashboard choose **New → Blueprint** and pick this
+repository; it asks for each secret.
+
+1. **Database.** Create a free MongoDB Atlas M0 cluster. Under Network Access
+   allow `0.0.0.0/0`, since Render's free instances have no fixed IP. Put the
+   database name in the URI: `mongodb+srv://USER:PASS@HOST/hireadyDB?...`
+2. **Moving existing local data** from the compose MongoDB:
+   ```sh
+   docker exec hiready-mongo mongodump --db hireadyDB --archive --gzip > hireadyDB.archive.gz
+   docker cp hireadyDB.archive.gz hiready-mongo:/tmp/ && docker exec hiready-mongo mongorestore --uri "mongodb+srv://USER:PASS@HOST" --archive=/tmp/hireadyDB.archive.gz --gzip
+   ```
+3. **Wire the two services together.** `VITE_API_URL` on the web app is the
+   API's URL plus `/api`; `CORS_ORIGINS` on the API is the web app's URL.
+   For Google sign-in, add the web app's domain to Firebase's authorised
+   domains.
+
+On the free plan the API sleeps when idle, so the first request after a quiet
+spell takes about a minute.
 
 ---
 
@@ -226,11 +250,22 @@ The coding module executes user-submitted Python, JavaScript/TypeScript, Java,
 Go, C++ and Rust. Executed processes receive a **minimal environment** — server
 secrets are never passed to user code.
 
-On Linux in production, unsandboxed execution is **refused** unless
-[nsjail](https://github.com/google/nsjail) is installed (recommended; needs root
-or `CAP_SYS_ADMIN`) or `ALLOW_UNSAFE_SANDBOX=1` is set explicitly. The Docker
-Compose path runs execution inside the backend container and defaults to the
-opt-in, which is acceptable for local self-hosting only.
+Three runners, tried in this order:
+
+1. **[nsjail](https://github.com/google/nsjail)**, when installed. Full
+   isolation, including a private network. Needs a host that allows
+   namespaces, which most container platforms (Render included) do not.
+2. **Restricted** (`SANDBOX_RUNNER=restricted`, on by default in
+   `hiready-backend/Dockerfile`). Each submission runs as its own random,
+   unprivileged uid in a private 0700 directory, under rlimits for CPU,
+   memory, file size, open files and processes. It cannot read the server's
+   secrets or another submission's files. It does **not** get a private
+   network. Needs the container to run as root, which the Dockerfile does.
+3. **Direct**, as the server's own user. Refused in production unless
+   `ALLOW_UNSAFE_SANDBOX=1`; for local development only.
+
+The image ships Python, Node, g++, JDK 17, Go and Rust. On a 0.1-CPU instance
+(Render free), Python runs in about 0.5s and Java, the slowest, about 18s.
 
 ---
 

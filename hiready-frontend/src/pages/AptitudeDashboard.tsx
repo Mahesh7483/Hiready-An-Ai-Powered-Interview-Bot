@@ -8,7 +8,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   LineChart, Line, PieChart, Pie, Cell, Legend,
 } from "recharts";
-import { API_BASE_URL, getAuthHeaders, apiJson, apiFetch } from "@/lib/api";
+import { apiJson, apiFetch } from "@/lib/api";
 
 interface AnalyticsData {
   totalTests: number;

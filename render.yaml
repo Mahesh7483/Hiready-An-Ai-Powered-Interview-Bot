@@ -1,0 +1,63 @@
+# Render Blueprint: the whole HiREady deployment, API and web app.
+#
+# Deploy a copy: Render dashboard -> New -> Blueprint -> pick this repo.
+# Render then asks for every `sync: false` value below; nothing secret lives
+# in this file.
+#
+# The database is MongoDB Atlas (Render has no managed MongoDB). Its free M0
+# tier is enough; allow 0.0.0.0/0 in Atlas Network Access, because Render's
+# free instances have no fixed outbound IP.
+
+services:
+  - type: web
+    name: hiready-server
+    runtime: docker
+    plan: free
+    rootDir: hiready-backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: MONGO_URI            # mongodb+srv://USER:PASS@HOST/hireadyDB?retryWrites=true&w=majority
+        sync: false
+      - key: CORS_ORIGINS         # the web app's URL, e.g. https://hiready-web.onrender.com
+        sync: false
+      - key: GROQ_API_KEY         # resume analysis, interviewer, code review
+        sync: false
+      - key: DEEPGRAM_API_KEY     # live speech-to-text in the voice interview
+        sync: false
+      - key: FIREBASE_PROJECT_ID  # Google sign-in
+        sync: false
+      - key: ADMIN_EMAILS
+        sync: false
+
+  - type: web
+    name: hiready-web
+    runtime: static
+    rootDir: hiready-frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    # Client-side routes (/login, /mastery, ...) have no file behind them.
+    # Without this, opening or refreshing any of them is a 404.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL         # the API's URL + /api, e.g. https://hiready-server.onrender.com/api
+        sync: false
+      - key: VITE_FIREBASE_API_KEY
+        sync: false
+      - key: VITE_FIREBASE_AUTH_DOMAIN
+        sync: false
+      - key: VITE_FIREBASE_PROJECT_ID
+        sync: false
+      - key: VITE_FIREBASE_STORAGE_BUCKET
+        sync: false
+      - key: VITE_FIREBASE_MESSAGING_SENDER_ID
+        sync: false
+      - key: VITE_FIREBASE_APP_ID
+        sync: false

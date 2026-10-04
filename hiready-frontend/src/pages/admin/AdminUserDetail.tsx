@@ -9,7 +9,6 @@ import { Badge } from "@/components/ui/badge";
 import { adminAPI, type AdminTestResult, type AdminProctorLog, type AdminInterviewSession } from "@/lib/adminApi";
 import { toast } from "sonner";
 import { fetchResumeHistory, type ResumeHistoryItem } from "@/lib/historyApi";
-import { fetchInterviewSessions } from "@/lib/historyApi";
 import DashboardLayout from "@/components/DashboardLayout";
 
 interface UserDetail {

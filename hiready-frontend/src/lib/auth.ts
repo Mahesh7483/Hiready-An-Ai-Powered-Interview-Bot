@@ -6,6 +6,7 @@ import {
 } from "firebase/auth";
 import { auth } from "./firebase";
 import { API_BASE_URL, getAuthHeaders } from "./api";
+import { saveSession, clearSession } from "./session";
 
 // Initialize Google Auth Provider
 const googleProvider = new GoogleAuthProvider();
@@ -28,6 +29,7 @@ export interface UserData {
 async function exchangeFirebaseToken(idToken: string): Promise<string> {
   let res: Response;
   try {
+    // eslint-disable-next-line no-restricted-globals -- pre-auth: this call is what mints the backend JWT, so there is no session to attach or expire (and a 401 here means a bad Firebase token, not an expired session)
     res = await fetch(`${API_BASE_URL}/auth/google`, {
       method: "POST",
       headers: {
@@ -72,8 +74,7 @@ export const signInWithGoogle = async (): Promise<UserData> => {
     const idToken = await user.getIdToken();
     const token = await exchangeFirebaseToken(idToken);
 
-    localStorage.setItem("token", token);
-    localStorage.setItem("user", JSON.stringify(userData));
+    saveSession(token, userData);
 
     return userData;
   } catch (error: unknown) {
@@ -96,8 +97,7 @@ export const signInWithGoogle = async (): Promise<UserData> => {
 export const signOut = async (): Promise<void> => {
   try {
     await firebaseSignOut(auth);
-    localStorage.removeItem("user");
-    localStorage.removeItem("token");
+    clearSession();
   } catch (error: unknown) {
     const err = error as { message?: string };
     throw new Error(err.message || "Sign out failed");
@@ -111,7 +111,16 @@ export const signOut = async (): Promise<void> => {
 export const getCurrentUserFromStorage = (): UserData | null => {
   try {
     const userJson = localStorage.getItem("user");
-    return userJson ? (JSON.parse(userJson) as UserData) : null;
+    if (!userJson) return null;
+    // Email login stores the backend's shape ({ _id, name, email }); Google
+    // sign-in stores Firebase's ({ uid, displayName, ... }). Read both.
+    const raw = JSON.parse(userJson) as Partial<UserData> & { _id?: string; name?: string | null };
+    return {
+      uid: raw.uid ?? raw._id ?? "",
+      displayName: raw.displayName ?? raw.name ?? null,
+      email: raw.email ?? null,
+      photoURL: raw.photoURL ?? null,
+    };
   } catch (error) {
     console.error("Failed to parse stored user data:", error);
     return null;

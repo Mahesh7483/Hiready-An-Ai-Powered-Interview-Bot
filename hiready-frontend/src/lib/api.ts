@@ -1,3 +1,5 @@
+import { clearSession } from "./session";
+
 export const API_BASE_URL =
   import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
@@ -13,13 +15,23 @@ export function getAuthHeaders(): Record<string, string> {
  * fetch wrapper that attaches the backend JWT when present.
  */
 export async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...init,
-    headers: {
-      ...(init.headers || {}),
-      ...getAuthHeaders(),
-    },
-  });
+  const headers: Record<string, string> = {
+    ...((init.headers as Record<string, string> | undefined) || {}),
+    ...getAuthHeaders(),
+  };
+
+  // A string body is JSON in this API (every caller passes JSON.stringify(...)),
+  // but fetch labels a string body `text/plain`, and express.json() skips
+  // anything not labelled JSON — the handler then sees an empty req.body and
+  // answers as if the caller had sent nothing. Six call sites (assessment
+  // section submit, face-check, violation reports, template creation, the
+  // assessment's coding submit) had forgotten the header, so this is done once
+  // here rather than hoping every future caller remembers it.
+  if (typeof init.body === "string" && !Object.keys(headers).some((k) => k.toLowerCase() === "content-type")) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const res = await fetch(`${API_BASE_URL}${path}`, { ...init, headers });
 
   // Expired/invalid JWT: clear the stale token and send the user to login.
   // Guards: never loop on auth endpoints themselves, and only redirect when
@@ -27,7 +39,7 @@ export async function apiFetch(path: string, init: RequestInit = {}): Promise<Re
   // ProtectedRoute handles that case).
   if (res.status === 401 && typeof window !== "undefined" && !path.startsWith("/auth/")) {
     if (localStorage.getItem("token")) {
-      localStorage.removeItem("token");
+      clearSession();
       if (!window.location.pathname.startsWith("/login")) {
         window.location.assign("/login");
       }

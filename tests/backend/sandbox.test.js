@@ -6,6 +6,7 @@ const {
   buildRunCommand,
   createTempDir,
   cleanupTempDir,
+  restrictedLimitArgs,
 } = require(backend('services/sandbox'));
 
 describe('Sandbox service unit tests', () => {
@@ -33,6 +34,36 @@ describe('Sandbox service unit tests', () => {
     const javaCmd = buildRunCommand(LANGUAGE_CONFIGS.java);
     expect(javaCmd.full).toContain('javac');
     expect(javaCmd.full).toContain('Main.java');
+  });
+
+  test('restricted runner passes the command as arguments, never as shell text', () => {
+    // Everything after the script is "$@" to bash. If a template or filename
+    // were ever spliced into the -c script, a name like "x; curl evil" would
+    // run; as an argument it is only ever a filename.
+    const args = restrictedLimitArgs({ cpuSeconds: 2, memoryMb: 256 });
+    expect(args[0]).toBe('-c');
+    expect(args[1]).toMatch(/exec "\$@"$/);
+    expect(args[1]).toContain('ulimit -t 2');
+    expect(args[1]).toContain('ulimit -d 262144');
+    expect(args[1]).toContain('ulimit -u 128');
+    expect(args[1]).toContain('ulimit -f 65536');
+    expect(args[1]).not.toMatch(/main\.|python|node/);
+  });
+
+  test('restricted runner limits coerce to integers, so a limit cannot carry shell text', () => {
+    const args = restrictedLimitArgs({ cpuSeconds: '1; rm -rf /', memoryMb: '64$(id)' });
+    expect(args[1]).not.toMatch(/rm|\$\(|;\s*rm/);
+    expect(args[1]).toMatch(/ulimit -t \d+ /);
+  });
+
+  test('restricted runner omits the data limit when none is given (the JVM case)', () => {
+    expect(restrictedLimitArgs({ cpuSeconds: 2, memoryMb: null })[1]).not.toContain('ulimit -d');
+  });
+
+  test('TypeScript compiles with the bundled transpiler, not a per-run npx download', () => {
+    const ts = LANGUAGE_CONFIGS.typescript;
+    expect(ts.compileArgs.join(' ')).toMatch(/tsTranspile\.js/);
+    expect([ts.command, ...(ts.args || []), ts.compileCommand].join(' ')).not.toMatch(/npx|ts-node/);
   });
 
   test('createTempDir and cleanupTempDir cycle cleans up files reliably', () => {

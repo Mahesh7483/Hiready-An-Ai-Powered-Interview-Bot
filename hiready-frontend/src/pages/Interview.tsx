@@ -1,13 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Mic, MicOff, Clock, Users, Laptop, BookOpen, AlertCircle } from "lucide-react";
+import { Clock, Users, Laptop, BookOpen, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
-import { useAuth } from "@/hooks/useAuth";
 
 // ============================================================
 // Guidelines Screen Component - Professional Instruction Page
@@ -205,7 +203,6 @@ const GuidelinesScreen: React.FC<{
 // ============================================================
 const Interview = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
 
   const handleStartTest = () => {
     // Redirect to Voice Interview page

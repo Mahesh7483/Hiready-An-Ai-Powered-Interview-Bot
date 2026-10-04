@@ -189,6 +189,38 @@ describe('the assessment surface', () => {
       expect(after.companyId).toBeNull();           // the tenancy field did not
     });
 
+    test('a create cannot place a template in a company either', async () => {
+      /**
+       * POST spread req.body into the new document while PUT had an allowlist,
+       * so the same tenancy field the PUT test above guards was open on create.
+       * It was dormant only because the browser's JSON bodies never reached
+       * this route (apiFetch sent them as text/plain, so it answered 400 for
+       * everyone); fixing that header is what made it live. Both routes now
+       * take their fields from one allowlist.
+       *
+       * `createdBy` was never forgeable — it is assigned after the spread. It
+       * is asserted too only to pin that ordering, so a refactor that moves
+       * the spread last cannot quietly open it.
+       */
+      const foreign = new mongoose.Types.ObjectId();
+      const res = await request(app)
+        .post('/api/assessment/templates')
+        .set('Authorization', adminToken)
+        .send({
+          title: `${TAG} created`,
+          sections: [{ type: 'aptitude', title: 'Logic', count: 5, negativeMarking: false, minutes: 10 }],
+          violationThreshold: 77,                 // an allowed field
+          companyId: foreign,                     // tenancy: must not be honoured
+          createdBy: foreign,                     // authorship: set by the server
+        });
+
+      expect(res.status).toBe(201);
+      const created = await AssessmentTemplate.findById(res.body._id).lean();
+      expect(created.violationThreshold).toBe(77);              // the allowed field applied
+      expect(created.companyId).toBeNull();                     // the tenancy field did not
+      expect(String(created.createdBy)).toBe(String(adminId));  // the author is the caller
+    });
+
     test('an update naming only unknown fields is refused, not silently applied', async () => {
       // Otherwise a typo in a field name reads as a successful save.
       const res = await request(app)
