@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { Mic, MicOff, X, Volume2, SkipForward, BookOpen, Laptop, Clock, Users, Briefcase, MonitorSmartphone, ShieldAlert } from "lucide-react";
+import { Mic, MicOff, X, Volume2, SkipForward, BookOpen, Laptop, Clock, Users, Briefcase, ShieldAlert } from "lucide-react";
 import CandidateWebcamMonitor from "@/components/proctoring/CandidateWebcamMonitor";
 import { sendProctorLog, type ProctorEvent } from "@/lib/proctorLogger";
 import { captureWebcamSnapshot } from "@/lib/webcamSnap";

@@ -30,7 +30,7 @@ import {
   SubmissionResult, type CodeReview, type SubmissionOutcome,
 } from "@/components/coding/SubmissionResult";
 import { useStrictProctoring, type ProctoringMode } from "@/hooks/useStrictProctoring";
-import { API_BASE_URL, getAuthHeaders, apiFetch } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 import {
   codeKey, DEFAULT_CODE, DEFAULT_MINUTES, DURATION_CHOICES, LANGUAGES,
 } from "@/lib/coding";

@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import DashboardLayout from "@/components/DashboardLayout";
 import { DesktopOnly } from "@/components/DesktopOnly";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Clock, CheckCircle2, XCircle, AlertCircle, Bookmark, BookmarkCheck, Plus, Eye, SkipForward } from "lucide-react";
+import { Clock, CheckCircle2, XCircle, AlertCircle, Bookmark, BookmarkCheck, SkipForward } from "lucide-react";
 import { toast } from "sonner";
 import { AptitudeTestResult } from "@/lib/aptitudeQuestions";
 import CandidateWebcamMonitor from "@/components/proctoring/CandidateWebcamMonitor";
@@ -14,7 +14,7 @@ import type { ProctorEvent } from "@/lib/proctorLogger";
 import { useStrictProctoring } from "@/hooks/useStrictProctoring";
 import { DEFAULT_CONFIG, type AptitudeConfig } from "@/lib/aptitude";
 import { useAuth } from "@/hooks/useAuth";
-import { API_BASE_URL, getAuthHeaders, apiFetch } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 interface QuizQuestion {
   _id: string;
@@ -173,11 +173,11 @@ const AptitudeTest = (props: AptitudeTestProps) => {
       if (negativeMarking) qs.set("negativeMarking", "true");
       if (difficulty && !adaptive) qs.set("difficulty", difficulty);
 
-      const url = adaptive
-        ? `${API_BASE_URL}/questions/quiz/${topic}/adaptive?${qs}`
-        : `${API_BASE_URL}/questions/quiz/${topic}?${qs}`;
+      const path = adaptive
+        ? `/questions/quiz/${topic}/adaptive?${qs}`
+        : `/questions/quiz/${topic}?${qs}`;
 
-      const response = await fetch(url, {});
+      const response = await apiFetch(path);
       if (!response.ok) {
         const err = await response.json().catch(() => ({}));
         throw new Error(err.error || "Failed to load questions");

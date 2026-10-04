@@ -29,6 +29,7 @@ export interface UserData {
 async function exchangeFirebaseToken(idToken: string): Promise<string> {
   let res: Response;
   try {
+    // eslint-disable-next-line no-restricted-globals -- pre-auth: this call is what mints the backend JWT, so there is no session to attach or expire (and a 401 here means a bad Firebase token, not an expired session)
     res = await fetch(`${API_BASE_URL}/auth/google`, {
       method: "POST",
       headers: {

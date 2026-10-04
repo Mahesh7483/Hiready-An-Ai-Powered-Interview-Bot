@@ -150,6 +150,56 @@ describe("apiFetch handles an expired session", () => {
   });
 });
 
+describe("apiFetch labels a JSON body as JSON", () => {
+  // fetch sends a string body as text/plain, and express.json() ignores
+  // anything not labelled JSON: the route then sees an empty req.body. Six
+  // callers forgot the header and shipped silently broken.
+  beforeEach(() => localStorage.clear());
+
+  const sentHeaders = async (init: RequestInit) => {
+    setLocation();
+    const spy = respond(200);
+    vi.stubGlobal("fetch", spy);
+    await apiFetch("/assessment/attempt/a1/violation", init);
+    return (spy.mock.calls[0][1] as RequestInit).headers as Record<string, string>;
+  };
+
+  it("adds Content-Type: application/json to a string body that has none", async () => {
+    const headers = await sentHeaders({ method: "POST", body: JSON.stringify({ type: "tab_switch" }) });
+    expect(headers["Content-Type"]).toBe("application/json");
+  });
+
+  it("does not override a Content-Type the caller chose", async () => {
+    const headers = await sentHeaders({
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "hello",
+    });
+    expect(headers["Content-Type"]).toBe("text/plain");
+  });
+
+  it("recognises the caller's header whatever its casing, rather than adding a second", async () => {
+    const headers = await sentHeaders({
+      method: "POST",
+      headers: { "content-type": "application/x-ndjson" },
+      body: "{}",
+    });
+    expect(headers["content-type"]).toBe("application/x-ndjson");
+    expect(headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("leaves bodyless requests alone", async () => {
+    const headers = await sentHeaders({ method: "POST" });
+    expect(headers["Content-Type"]).toBeUndefined();
+  });
+
+  it("leaves non-string bodies to the browser, which must set their own boundary", async () => {
+    // Forcing JSON onto a FormData body would destroy its multipart boundary.
+    const headers = await sentHeaders({ method: "POST", body: new FormData() });
+    expect(headers["Content-Type"]).toBeUndefined();
+  });
+});
+
 describe("apiJson surfaces the server's message", () => {
   beforeEach(() => localStorage.clear());
 

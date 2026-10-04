@@ -1,4 +1,4 @@
-import { apiFetch, getAuthHeaders, API_BASE_URL } from "./api";
+import { apiFetch } from "./api";
 
 export interface Message {
   role: "system" | "user" | "assistant";

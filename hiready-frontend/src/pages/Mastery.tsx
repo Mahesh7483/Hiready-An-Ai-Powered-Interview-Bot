@@ -4,7 +4,6 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { QueryError } from "@/components/QueryError";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import {
   ArrowRight, Brain, TerminalSquare, MessageSquare, FileText, Zap, Loader2, RotateCcw, Target,
 } from "lucide-react";

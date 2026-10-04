@@ -1,7 +1,6 @@
 import { apiFetch } from "@/lib/api";
 import { createClient, LiveTranscriptionEvents } from "@deepgram/sdk";
 import type { ListenLiveClient } from "@deepgram/sdk";
-import { API_BASE_URL, getAuthHeaders } from "./api";
 
 /** Shape of the Deepgram live transcript message we consume */
 interface DeepgramResultsMessage {

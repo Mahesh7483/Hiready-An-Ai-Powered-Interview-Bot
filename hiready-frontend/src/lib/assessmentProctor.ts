@@ -1,5 +1,4 @@
-import { apiFetch } from "@/lib/api";
-import { apiJson, getAuthHeaders, API_BASE_URL } from "./api";
+import { apiFetch, apiJson } from "@/lib/api";
 
 export type ViolationType =
   | "tab_switch"
@@ -38,7 +37,8 @@ export async function reportViolationEvent(
     );
     sessionStorage.setItem(key, String(now));
   } catch {
-    // Fallback: raw fetch so a bad auth token never breaks the attempt UI
+    // Fallback: the same request through apiFetch, which does not throw on a
+    // non-2xx response, so a bad auth token never breaks the attempt UI
     try {
       const res = await apiFetch(`/assessment/attempt/${attemptId}/violation`, {
         method: "POST",

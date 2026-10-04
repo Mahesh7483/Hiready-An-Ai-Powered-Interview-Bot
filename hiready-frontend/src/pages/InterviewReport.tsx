@@ -10,7 +10,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { toast } from "sonner";
 import { attachInterviewAnalysis } from "@/lib/historyApi";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { API_BASE_URL, getAuthHeaders, apiFetch } from "@/lib/api";
+import { apiFetch } from "@/lib/api";
 
 interface ConversationEntry {
   role: "interviewer" | "user";
@@ -164,7 +164,6 @@ const InterviewReport = () => {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...getAuthHeaders(),
         },
         body: JSON.stringify({ transcript, targetRole }),
       });

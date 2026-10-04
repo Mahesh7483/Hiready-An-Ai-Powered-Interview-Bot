@@ -211,6 +211,37 @@ router.get('/templates', async (req, res) => {
   }
 });
 
+/**
+ * Fields a write may set, on create and on update alike. Deliberately an
+ * allowlist, not a denylist.
+ *
+ * PUT used to $set req.body wholesale, and POST spread it into the new
+ * document. `companyId` is a declared path, so a single unvalidated field could
+ * move a platform template (companyId: null, visible to everyone) into one
+ * company's private scope — or pull a rival's template out of theirs. Which
+ * templates a recruiter can see is decided by that field in
+ * services/hire/readers.js, so it is an authorization input, not a content
+ * field. `createdBy` is likewise set from the token, never from the body.
+ *
+ * Adding a path here is a deliberate act. Omitting one costs an edit; adding
+ * the wrong one costs tenancy.
+ */
+const TEMPLATE_WRITABLE = [
+  'title', 'description', 'targetRole', 'sections', 'breaks',
+  'resumeDriven', 'attemptLimit', 'cooldownDays', 'violationThreshold',
+  'isPublished',
+];
+
+/** Only the allowlisted keys of a request body, copied as own properties. */
+function pickTemplateFields(body) {
+  const src = body && typeof body === 'object' ? body : {};
+  const picked = {};
+  TEMPLATE_WRITABLE.forEach((k) => {
+    if (Object.prototype.hasOwnProperty.call(src, k)) picked[k] = src[k];
+  });
+  return picked;
+}
+
 router.post('/templates', requireAdmin, async (req, res) => {
   try {
     const { title, sections } = req.body;
@@ -219,7 +250,7 @@ router.post('/templates', requireAdmin, async (req, res) => {
       return res.status(400).json({ error: 'at least one section is required' });
     }
     const template = await AssessmentTemplate.create({
-      ...req.body,
+      ...pickTemplateFields(req.body),
       title: title.slice(0, 150),
       createdBy: req.user.id,
     });
@@ -230,32 +261,9 @@ router.post('/templates', requireAdmin, async (req, res) => {
   }
 });
 
-/**
- * Fields an update may touch. Deliberately an allowlist, not a denylist.
- *
- * This route used to $set req.body wholesale. `companyId` is a declared path,
- * so a single unvalidated field could move a platform template (companyId:
- * null, visible to everyone) into one company's private scope — or pull a
- * rival's template out of theirs. Which templates a recruiter can see is
- * decided by that field in services/hire/readers.js, so it is an authorization
- * input, not a content field.
- *
- * Adding a path here is a deliberate act. Omitting one costs an edit; adding
- * the wrong one costs tenancy.
- */
-const TEMPLATE_UPDATABLE = [
-  'title', 'description', 'targetRole', 'sections', 'breaks',
-  'resumeDriven', 'attemptLimit', 'cooldownDays', 'violationThreshold',
-  'isPublished',
-];
-
 router.put('/templates/:id', requireAdmin, async (req, res) => {
   try {
-    const body = req.body && typeof req.body === 'object' ? req.body : {};
-    const $set = {};
-    TEMPLATE_UPDATABLE.forEach((k) => {
-      if (Object.prototype.hasOwnProperty.call(body, k)) $set[k] = body[k];
-    });
+    const $set = pickTemplateFields(req.body);
     if (!Object.keys($set).length) {
       return res.status(400).json({ error: 'No updatable fields supplied' });
     }
